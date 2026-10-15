@@ -1,6 +1,4 @@
-# 🏙️ GCITY - Game Thành phố (Clone)
-
-Bản tái hiện game City (gaubong.us) với **code viết hoàn toàn từ đầu** và **asset tự vẽ bằng canvas** (không dùng asset bản quyền của bên thứ ba). Sẵn sàng up lên GitHub Pages + Firebase.
+# 🏙️ GCITY - Game Thành phố
 
 ## ✨ Tính năng (giữ nguyên cốt lõi)
 
@@ -64,9 +62,3 @@ python3 -m http.server 8000
 ## 🎨 Thay asset
 
 Asset được vẽ bằng canvas trong `js/assets.js` (hàm `drawCharacter`, `drawBuilding`, `drawTree`...). Để dùng ảnh thật, thay các hàm này bằng `drawImage` với ảnh PNG của bạn đặt trong folder `assets/`.
-
-## ⚠️ Lưu ý
-
-- Đây là bản viết lại độc lập, **không chứa mã nguồn hay asset gốc** của gaubong.us.
-- Tên, tính năng, cơ chế game (gameplay mechanics) không thuộc phạm vi bản quyền.
-- Asset gốc (hình ảnh nhân vật, nền) là tài sản của bên thứ ba — hãy tự tạo hoặc mua license riêng nếu muốn dùng.
