@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>GCITY - Gặp bạn bè · Dạo công viên · Khám phá thành phố</title>
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body class="dark">
+
+<!-- ===== LOADING SCREEN ===== -->
+<div id="loadingScreen" class="loading-screen">
+  <div class="loading-inner">
+    <div class="loading-logo">GCITY</div>
+    <div class="loading-sub">Một góc thành phố, một góc nhìn mới.</div>
+    <div class="loading-bar"><div id="loadingBar" class="loading-bar-fill"></div></div>
+    <div id="loadingText" class="loading-text">Đang mở cửa thành phố…</div>
+  </div>
+</div>
+
+<!-- ===== CHARACTER SELECT ===== -->
+<div id="charSelect" class="char-select hidden">
+  <div class="char-panel">
+    <h2 class="char-title">Chọn nhân vật</h2>
+    <div class="char-gender-tabs">
+      <button class="gender-tab active" data-gender="male">Nam</button>
+      <button class="gender-tab" data-gender="female">Nữ</button>
+    </div>
+    <div id="charGrid" class="char-grid"></div>
+    <div class="char-name-row">
+      <input id="charName" type="text" maxlength="16" placeholder="Tên nhân vật…" value="Player" />
+    </div>
+    <button id="enterGameBtn" class="btn-primary btn-large">Vào thành phố</button>
+  </div>
+</div>
+
+<!-- ===== GAME SCREEN ===== -->
+<div id="gameScreen" class="game-screen hidden">
+  <canvas id="gameCanvas"></canvas>
+
+  <!-- Top HUD -->
+  <div class="hud-top">
+    <div class="hud-player">
+      <span id="hudName" class="hud-name">Player</span>
+      <span class="hud-coin">🪙 <span id="hudCoin">100</span></span>
+      <span class="hud-zone" id="hudZone">Quảng trường</span>
+    </div>
+    <div class="hud-actions-top">
+      <button class="hud-btn" id="btnMap" title="Bản đồ">🗺️</button>
+      <button class="hud-btn" id="btnPlayers" title="Người chơi">👥 <span id="playerCount">1</span></button>
+    </div>
+  </div>
+
+  <!-- Bottom action bar -->
+  <div class="hud-bottom">
+    <button class="action-btn" id="btnEmote" title="Hành động">🕺 Hành động</button>
+    <button class="action-btn" id="btnChat" title="Chat">💬 Chat</button>
+    <button class="action-btn" id="btnFish" title="Câu cá">🎣 Câu cá</button>
+    <button class="action-btn" id="btnShop" title="Cửa hàng">🏪 Cửa hàng</button>
+    <button class="action-btn" id="btnInventory" title="Túi đồ">🎒 Túi</button>
+  </div>
+
+  <!-- Joystick (mobile) -->
+  <div id="joystick" class="joystick">
+    <div id="joystickKnob" class="joystick-knob"></div>
+  </div>
+
+  <!-- Chat panel -->
+  <div id="chatPanel" class="panel chat-panel hidden">
+    <div class="panel-header">
+      <span>Trò chuyện</span>
+      <button class="panel-close" data-close="chatPanel">✕</button>
+    </div>
+    <div id="chatHistory" class="chat-history"></div>
+    <div class="chat-input-row">
+      <input id="chatInput" type="text" maxlength="120" placeholder="Nhập tin nhắn…" />
+      <button id="chatSend" class="btn-primary">Gửi</button>
+    </div>
+  </div>
+
+  <!-- Emote/Action panel -->
+  <div id="emotePanel" class="panel emote-panel hidden">
+    <div class="panel-header">
+      <span>Bảng chọn hành động</span>
+      <button class="panel-close" data-close="emotePanel">✕</button>
+    </div>
+    <div class="panel-sub">Nhân vật sẽ thực hiện ngay</div>
+    <div id="emoteGrid" class="emote-grid"></div>
+  </div>
+
+  <!-- Fishing panel -->
+  <div id="fishPanel" class="panel fish-panel hidden">
+    <div class="panel-header">
+      <span>🎣 Đảo câu cá</span>
+      <button class="panel-close" data-close="fishPanel">✕</button>
+    </div>
+    <div class="fish-stats">
+      <div>Cần: <b id="fishRod">Cần cơ bản</b></div>
+      <div>Mồi: <b id="fishBait">Giun (10)</b></div>
+      <div>Cá đã bắt: <b id="fishCount">0</b></div>
+    </div>
+    <div id="fishArea" class="fish-area">
+      <div class="fish-water">
+        <div id="fishFloat" class="fish-float">🎣</div>
+        <div id="fishCaught" class="fish-caught hidden"></div>
+      </div>
+      <button id="fishCastBtn" class="btn-primary btn-wide">Quăng cần</button>
+      <button id="fishSellBtn" class="btn-secondary btn-wide">Bán tất cả cá</button>
+    </div>
+    <div class="fish-shop">
+      <div class="shop-title">Mua mồi</div>
+      <button class="shop-item" data-bait="worm" data-price="5">🪱 Giun - 5🪙</button>
+      <button class="shop-item" data-bait="shrimp" data-price="15">🦐 Tép - 15🪙</button>
+      <button class="shop-item" data-bait="lure" data-price="40">✨ Mồi giả - 40🪙</button>
+    </div>
+  </div>
+
+  <!-- Shop panel (Cinema + Lottery + Rental) -->
+  <div id="shopPanel" class="panel shop-panel hidden">
+    <div class="panel-header">
+      <span>🏪 Dịch vụ thành phố</span>
+      <button class="panel-close" data-close="shopPanel">✕</button>
+    </div>
+    <div class="shop-tabs">
+      <button class="shop-tab active" data-tab="cinema">🎬 Rạp phim</button>
+      <button class="shop-tab" data-tab="lottery">🎰 Xổ số</button>
+      <button class="shop-tab" data-tab="rental">🛵 Thuê đồ</button>
+    </div>
+    <div id="shopContent" class="shop-content"></div>
+  </div>
+
+  <!-- Inventory panel -->
+  <div id="inventoryPanel" class="panel inventory-panel hidden">
+    <div class="panel-header">
+      <span>🎒 Túi đồ</span>
+      <button class="panel-close" data-close="inventoryPanel">✕</button>
+    </div>
+    <div id="inventoryContent" class="inventory-content"></div>
+  </div>
+
+  <!-- Players online panel -->
+  <div id="playersPanel" class="panel players-panel hidden">
+    <div class="panel-header">
+      <span>👥 Người trong map</span>
+      <button class="panel-close" data-close="playersPanel">✕</button>
+    </div>
+    <div id="playersList" class="players-list"></div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast hidden"></div>
+</div>
+
+<script src="js/config.js"></script>
+<script src="js/net.js"></script>
+<script src="js/assets.js"></script>
+<script src="js/map.js"></script>
+<script src="js/player.js"></script>
+<script src="js/fishing.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/game.js"></script>
+</body>
+</html>
