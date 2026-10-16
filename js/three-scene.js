@@ -49,22 +49,27 @@ const Scene3D = (() => {
   const H = Math.PI/2, P2 = a=>a.map(([x,z])=>({x,z}));
   const Bd = (x,z,w,d,h,ry,color,roof,type,name)=>({x,z,w,d,h,ry,color,roof,type,name});
   Object.assign(ZONES.plaza, {
-    size:104, race:{x:42.4,z:0,rin:1.7,rout:8,hs:9.6,ro:8.6,lanes:7}, rentLot:{x:-42,z:3}, wheel:{x:14,z:42,r:3}, spawn:{x:0,z:9}, portal:{x:0,z:37,w:6,d:3,to:'fishing',label:'🚤 Đảo câu cá'},
+    size:104, race:{x:42.4,z:0,rin:1.7,rout:8,hs:9.6,ro:8.6,lanes:7}, rentLot:{x:-42,z:3}, wheel:{x:15.5,z:42,r:3}, spawn:{x:0,z:9}, portal:{x:0,z:37,w:6,d:3,to:'fishing',label:'🚤 Đảo câu cá'},
     buildings:[
       Bd(-22,-27,10,6,8,0,0xe8876f,0xc96a55,'shop','SUNNY MART'), Bd(22,-27,10,6,10,0,0x8b72c8,0x6a53a8,'lottery','XỔ SỐ CITY'),
       Bd(-27,-9,6,10,9,H,0x4fa3ab,0x2f7f88,'cinema','RẠP PHIM'), Bd(-27,9,6,8,6,H,0x6fb7b0,0x3f8f8c,'fishshop','ĐẢO CÂU CÁ'),
       Bd(27,-9,6,10,10,-H,0xd77aa0,0xb55a82,'shop','PIZZA HOUSE'), Bd(27,9,6,10,8,-H,0xf0a35e,0xcf8040,'rental','THUÊ ĐỒ'),
       Bd(-22,27,10,6,9,Math.PI,0x8b72c8,0x6a53a8,'shop','MOON BAR'), Bd(22,27,10,6,8,Math.PI,0x4fa3ab,0x2f7f88,'shop','HAPPY TOYS'),
     ],
-    trees:P2([[-12,-12],[12,-12],[-12,12],[12,12],[-13,-4],[13,-4],[-13,4],[13,4]]),
-    lamps:P2([[-15.5,-9],[-15.5,9],[15.5,-9],[15.5,9],[-6,-15.5],[6,-15.5],[-6,15.5],[6,15.5]]),
-    flowers:P2([[-6.5,-12.5],[6.5,-12.5],[-6.5,12.5],[6.5,12.5]]),
+    trees:P2([[-12,-12],[12,-12],[-12,12],[12,12],[-13,-4],[13,-4],[-13,4],[13,4],[-10.5,27],[10.5,27],[-10.5,33.5],[10.5,33.5]]),
+    lamps:P2([[-15.5,-9],[-15.5,9],[15.5,-9],[15.5,9],[-6,-15.5],[6,-15.5],[-6,15.5],[6,15.5],
+      [-4.6,26],[4.6,26],[-36.2,-10.8],[-36.2,16.8],[26,-4.6],[26,4.6]]),
+    flowers:P2([[-6.5,-12.5],[6.5,-12.5],[-6.5,12.5],[6.5,12.5],[-7.4,35],[7.4,35]]),
     benches:[], fountain:{x:0,z:0},
     screen:{x:0, z:-37.5, w:16, h:9, y:1.4}
   });
   [[-7,-7],[7,-7],[-7,7],[7,7]].forEach(([bx,bz])=>ZONES.plaza.benches.push({x:bx, z:bz, ry:Math.atan2(-bx,-bz)}));
   [-9,-4.5,4.5,9].forEach(bx=>ZONES.plaza.benches.push({x:bx, z:-29, ry:Math.PI})); // ghế hàng 1 hướng về màn hình
   [-9,-4.5,4.5,9].forEach(bx=>ZONES.plaza.benches.push({x:bx, z:-26.5, ry:Math.PI})); // ghế hàng 2
+  [-9,-4.5,4.5,9].forEach(bx=>ZONES.plaza.benches.push({x:bx, z:-24, ry:Math.PI}));   // ghế hàng 3
+  [[-5.4,30.5,Math.PI/2],[5.4,30.5,-Math.PI/2],                                   // 2 ghế đối diện dọc lối ra cổng tàu
+   [-18.8,42,Math.PI/2],[-12.2,42,-Math.PI/2],[-15.5,44.8,Math.PI],[-15.5,39.2,0]]   // 4 ghế quanh bàn khu nghỉ chân
+    .forEach(([bx,bz,ry])=>ZONES.plaza.benches.push({x:bx, z:bz, ry}));
 
   function init(cont){
     container = cont;
@@ -277,7 +282,7 @@ const Scene3D = (() => {
     const flat=(w,d,x,y,zz,m)=>{ const o=new THREE.Mesh(new THREE.PlaneGeometry(w,d),m); o.rotation.x=-Math.PI/2; o.position.set(x,y,zz); o.receiveShadow=true; worldGroup.add(o); };
     const bx=(w,h,d,x,y,zz,m)=>{ const o=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m); o.position.set(x,y,zz); o.castShadow=o.receiveShadow=true; worldGroup.add(o); };
     const isl=new THREE.Mesh(new THREE.CylinderGeometry(56,56,1,64),L(0x9fd69a)); isl.position.y=-0.5; isl.receiveShadow=true; worldGroup.add(isl);
-    [[-44,-30],[47,32],[-40,34]].forEach(([x,zz])=>{ const h=new THREE.Mesh(new THREE.SphereGeometry(10,14,8),L(0xb6e3a8)); h.scale.y=0.45; h.position.set(x,0,zz); worldGroup.add(h); });
+    [[-44,-30],[47,32],[-40,34]].forEach(([x,zz])=>{ const h=new THREE.Mesh(new THREE.SphereGeometry(10,14,8),L(0xa9dca0)); h.scale.y=0.6; h.position.set(x,0,zz); worldGroup.add(h); });
     // ===== PLAZA: gạch be (theo mẫu Gaubong) =====
     flat(60,60,0,0.02,0,L({map:tileTex('#f2dcb5','#e6cfa2',24,24)}));
     // vỉa hè xám nhạt dọc 2 bên mỗi làn đường
@@ -307,8 +312,60 @@ const Scene3D = (() => {
     [-10.5,10.5].forEach(sx=>bx(1.1,2.4,1,sx,1.5,-36,L(0x1b1f27)));
     (ZONES.plaza.flowers||[]).forEach(f=>{ bx(3,0.5,1.2,f.x,0.3,f.z,L(0xe6d3b0));
       for(let i=-1;i<=1;i++) for(let j=0;j<2;j++){ const fl=new THREE.Mesh(new THREE.SphereGeometry(0.22,6,5),L(i%2?0xf06a8d:0xff8fa8)); fl.position.set(f.x+i*0.9,0.65,f.z+(j-0.5)*0.5); worldGroup.add(fl); } });
-    for(let i=0;i<22;i++){ const a=i/22*Math.PI*2+Math.sin(i*3)*0.1, r=46+Math.sin(i*5)*4; const tx=Math.cos(a)*r, tz=Math.sin(a)*r; if((tx>33&&Math.abs(tz)<21)||(tx<-33&&tz>-15&&tz<19)||(tz>33&&tx>-21&&tx<23)) continue; makeTree(tx, tz, 1.5+Math.abs(Math.sin(i*7))*0.8, false); }
+    for(let i=0;i<22;i++){ const a=i/22*Math.PI*2+Math.sin(i*3)*0.1, r=46+Math.sin(i*5)*4; const tx=Math.cos(a)*r, tz=Math.sin(a)*r; if((tx>33&&Math.abs(tz)<21)||(tx<-33&&tz>-15&&tz<19)||(tz>29&&tx>-27&&tx<28)||(tx<-30&&Math.abs(tz)<14)||(tx>30&&Math.abs(tz)<4)) continue; makeTree(tx, tz, 1.5+Math.abs(Math.sin(i*7))*0.8, false); }
+    buildParkLayout();
     buildExtras();
+  }
+
+
+  // ===== BỐ CỤC CÔNG VIÊN (v18): trục chữ thập kéo thẳng tới 4 đích — sân khấu (B) · bãi xe (T) · trường đua (Đ) · cổng tàu (N) =====
+  function buildParkLayout(){
+    const L=c=>new THREE.MeshLambertMaterial(typeof c==='object'?c:{color:c});
+    const flat=(w,d,x,y,zz,m)=>{ const o=new THREE.Mesh(new THREE.PlaneGeometry(w,d),m); o.rotation.x=-Math.PI/2; o.position.set(x,y,zz); o.receiveShadow=true; worldGroup.add(o); return o; };
+    const bx=(w,h,d,x,y,zz,c,ry)=>{ const o=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),L(c)); o.position.set(x,y,zz); if(ry) o.rotation.y=ry; o.castShadow=o.receiveShadow=true; worldGroup.add(o); return o; };
+    const cr=(rx,ry)=>L({map:tileTex('#d18a68','#c47d5c',rx,ry)});
+    const cream=0xe6d3b0, dark=0x2f4a3a, Lt=ZONES.plaza.rentLot;
+
+    // --- Nam: quảng trường gạch nối dài (khớp ô gạch với nền cũ) + viền vỉa hè ---
+    flat(45,17.5,0,0.02,38.75,L({map:tileTex('#f2dcb5','#e6cfa2',18,7)}));
+    const sideW=L(0xc9ccd1);
+    flat(46.6,0.8,0,0.045,47.9,sideW); [-1,1].forEach(k=>flat(0.8,18.3,k*22.9,0.045,39.15,sideW));
+
+    // --- 4 nhánh đá đỏ nối ra khỏi vỉa hè của đường vòng ---
+    flat(6,17.2,0,0.09,32.2,cr(3,8));        // Nam: tới sân cổng tàu (z 23.6 → 40.8)
+    flat(6,4.9,0,0.09,-26.05,cr(3,2));       // Bắc: tới bậc thang sân khấu
+    flat(13.6,6,-30.4,0.09,0,cr(6,3));       // Tây: tới bãi thuê xe
+    flat(10.4,6,28.8,0.09,0,cr(5,3));        // Đông: tới trường đua
+
+    // --- Sân tròn trước cổng tàu (lặp lại hình đài phun) ---
+    const pad=new THREE.Mesh(new THREE.CircleGeometry(6.2,40),L({map:tileTex('#c97d5c','#bd7050',6,6)})); pad.rotation.x=-Math.PI/2; pad.position.set(0,0.13,38); pad.receiveShadow=true; worldGroup.add(pad);
+    for(let i=0;i<26;i++){ const a=i/26*Math.PI*2, cx=Math.cos(a)*6.6, cz=38+Math.sin(a)*6.6;
+      if(Math.sin(a)<-0.2 && Math.abs(cx)<3.6) continue;   // chừa lối vào phía bắc
+      bx(0.9,0.2,0.55,cx,0.13,cz,0xa85a3c,-a); }
+    // cổng gỗ: 2 trụ + xà vàng, biển "Đảo câu cá" treo giữa
+    [-3.9,3.9].forEach(sx=>{ bx(0.42,4.5,0.42,sx,2.25,37,dark); const g=new THREE.Mesh(new THREE.SphereGeometry(0.34,10,8),L(0xd4af37)); g.position.set(sx,4.75,37); worldGroup.add(g); });
+    bx(8.6,0.4,0.5,0,4.45,37,0xd4af37);
+
+    // --- Khu nghỉ chân (thay sàn gỗ trơ): sàn ván phẳng + bàn + dù, 4 ghế ngồi được ---
+    const pc=document.createElement('canvas'); pc.width=pc.height=128; const pg=pc.getContext('2d');
+    pg.fillStyle='#c99a6b'; pg.fillRect(0,0,128,128); for(let k=0;k<4;k++){ pg.fillStyle=k%2?'#bd8d5f':'#d3a577'; pg.fillRect(0,k*32,128,30); }
+    const pt=new THREE.CanvasTexture(pc); pt.wrapS=pt.wrapT=THREE.RepeatWrapping; pt.repeat.set(3,2); pt.anisotropy=maxAniso();
+    flat(9.4,7,-15.5,0.07,42,L({map:pt}));
+    const tb=new THREE.Mesh(new THREE.CylinderGeometry(0.85,0.85,0.1,16),L(0xf4f1e6)); tb.position.set(-15.5,0.78,42); tb.castShadow=true; worldGroup.add(tb);
+    bx(0.14,0.75,0.14,-15.5,0.4,42,dark);
+    bx(0.07,2.7,0.07,-15.5,1.5,42,0x8d8d8d);
+    const um=new THREE.Mesh(new THREE.ConeGeometry(2.1,0.75,8),L(0xf0a35e)); um.position.set(-15.5,2.95,42); um.castShadow=true; worldGroup.add(um);
+
+    // --- Vòng quay: nền đá để không đứng chơ vơ trên cỏ ---
+    flat(14,6.4,15.5,0.06,42,L(cream)); flat(12.8,5.2,15.5,0.075,42,cr(5,2));
+
+    // --- Bãi thuê xe: lề đường kem + lối đá đỏ vào bãi + cây che phía sau ---
+    const cu=L(cream), cx0=Lt.x, cz0=Lt.z+0.5;
+    flat(10.9,0.5,cx0,0.08,cz0-13.75,cu); flat(10.9,0.5,cx0,0.08,cz0+13.75,cu);
+    flat(0.5,27,cx0-5.25,0.08,cz0,cu); flat(0.5,27,cx0+5.25,0.08,cz0,cu);
+    [[-51.5,-6],[-51.5,14],[-49,-12.5]].forEach(([tx,tz])=>makeTree(tx,tz,1.5,false));
+    // --- Nam: cây hậu cảnh sau cổng tàu ---
+    [[-14,50.8,1.6],[-5,52.3,1.5],[5,52.3,1.7],[14,50.8,1.5]].forEach(([tx,tz,sc])=>makeTree(tx,tz,sc,false));
   }
 
   // Đường đua hình sân vận động (2 đoạn thẳng + 2 nửa vòng), mọi làn chạy cùng "tiến độ" u nên luôn thẳng hàng ngang nhau
@@ -398,7 +455,6 @@ const Scene3D = (() => {
     [0xe85c5c,0x4aa3df,0xf2c94c,0x8fc15a,0xd77aa0,0xf0a35e,0x8b72c8,0x58b8c0].forEach((c,i)=>{ const a=i/8*Math.PI*2, pv=new THREE.Group(); pv.position.set(Math.cos(a)*7,Math.sin(a)*7,0); box(1.6,1.2,1.4,0,-0.9,0,c,pv); rot.add(pv); gond.push(pv); });
     wg.add(rot); const l1=box(0.4,10,0.4,-2.6,4.6,0,0x3f8f8c,wg); l1.rotation.z=0.3; const l2=box(0.4,10,0.4,2.6,4.6,0,0x3f8f8c,wg); l2.rotation.z=-0.3;
     wg.position.set(W.x,0,W.z); worldGroup.add(wg); ferris={rot,gond};
-    box(10,0.3,7,-12,0.15,39,0xc99a6b); box(4,0.15,1,-12,0.075,35,0xc99a6b);
   }
 
   // ===== BÃI THUÊ XE: số xe còn / tổng (bong bóng trên bãi), xe đang được thuê thì ẩn khỏi bãi =====
@@ -495,7 +551,7 @@ const Scene3D = (() => {
     if(z.portal){
       const p = z.portal;
       const ring = new THREE.Mesh(new THREE.BoxGeometry(p.w, 0.1, p.d), new THREE.MeshBasicMaterial({color:0xffd700, transparent:true, opacity:0.5}));
-      ring.position.set(p.x, 0.1, p.z); worldGroup.add(ring);
+      ring.position.set(p.x, zoneId==='plaza'?0.2:0.1, p.z); worldGroup.add(ring);
       const sign = makeTextSprite(p.label, {fontsize:28, color:'#fff', bg:'rgba(255,180,0,.8)'});
       sign.position.set(p.x, 3, p.z); sign.scale.set(0.8*sign.userData.ar, 0.8, 1); worldGroup.add(sign);
     }
