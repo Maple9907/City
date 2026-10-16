@@ -188,16 +188,6 @@ const UI = (() => {
     } else if(tab==='rental'){
       c.innerHTML = `
         <div class="shop-service">
-          <h4>🛵 Xe máy (ngồi lái thật)</h4>
-          <p>Nhân vật ngồi lên xe, điều khiển bằng joystick. Thuê 5 phút. Giá: 50🪙</p>
-          <button class="btn-primary" id="rentBikeReal">Thuê xe máy (50🪙)</button>
-        </div>
-        <div class="shop-service">
-          <h4>✈️ Máy bay (bay được)</h4>
-          <p>Ngồi lên máy bay, có nút Bay lên / Hạ cánh / Lùi / Tiến, cánh quạt xoay khi bay. Thuê 5 phút. Giá: 150🪙</p>
-          <button class="btn-primary" id="rentPlane">Thuê máy bay (150🪙)</button>
-        </div>
-        <div class="shop-service">
           <h4>🎿 Giày trượt (tăng tốc 30s)</h4>
           <p>Giá: 15🪙</p>
           <button class="btn-secondary" id="rentSkate">Thuê giày (15🪙)</button>
@@ -207,11 +197,26 @@ const UI = (() => {
           <p>Tăng tỉ lệ cá lớn. Giá: 100🪙</p>
           <button class="btn-secondary" id="buyRod">Mua cần (100🪙)</button>
         </div>`;
-      $('rentBikeReal').onclick = ()=> onAction('rentVehicle', { type:'bike' });
-      $('rentPlane').onclick = ()=> onAction('rentVehicle', { type:'plane' });
       $('rentSkate').onclick = ()=> onAction('rentSkate');
       $('buyRod').onclick = ()=> onAction('buyRod');
     }
+  }
+
+  // ---- Thuê xe / máy bay (NPC Tài Xế): list = [{i, kind, name, cssColor, price, taken}] ----
+  function renderVehicleShop(list){
+    const c = $('vehicleList');
+    const sec = (kind, title, note) => {
+      const items = list.filter(v=>v.kind===kind);
+      return `<div class="veh-title">${title} <small>${note}</small></div><div class="veh-grid">` + items.map(v=>`
+        <button class="veh-card${v.taken?' taken':''}" data-slot="${v.i}" ${v.taken?'disabled':''}>
+          <span class="veh-pic" style="background:${v.cssColor}">${kind==='plane'?'✈️':'🚗'}</span>
+          <b>${v.name}</b>
+          <small>${v.taken ? 'Đang có người thuê' : v.price+'🪙 · 5 phút'}</small>
+        </button>`).join('') + `</div>`;
+    };
+    c.innerHTML = sec('car','🚗 Xe mui trần','(ngồi lái thật)') + sec('plane','✈️ Máy bay','(có nút Bay lên / Hạ cánh)') +
+      `<div class="mg-info">Chạm vào xe muốn thuê, nhân vật sẽ lên ngồi luôn. Xuống xe là xe tự về bãi.</div>`;
+    c.querySelectorAll('[data-slot]').forEach(b=> b.onclick = ()=> onAction('rentVehicle', { slot:+b.dataset.slot }));
   }
 
   // ---- Inventory ----
@@ -296,5 +301,5 @@ const UI = (() => {
 
   return { setLoading, hideLoading, initCharSelect, showCharSelect, hideCharSelect,
     togglePanel, closePanel, openPanel, openShop, initPanels, addChat, updateHUD, toast, initJoystick,
-    renderInventory, renderPlayers, renderShop, guardTap };
+    renderInventory, renderPlayers, renderShop, renderVehicleShop, guardTap };
 })();

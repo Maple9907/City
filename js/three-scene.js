@@ -23,6 +23,7 @@ const Scene3D = (() => {
   let waterMesh = null, fountainFx = null;
   let screenInfo = null, screenCanvas = null, screenTex = null, spinners = [];
   let ferris = null, racers = [], raceCanvas = null, raceTex = null;
+  let lotSlots = [], lotTaken = {}, lotBadge = null, lotBadgeOn = true;   // bãi thuê xe: 4 xe + 2 máy bay (lotTaken giữ trạng thái khi dựng lại zone)
 
   // Dữ liệu nhân vật (7 nam + 6 nữ) nằm trong js/character.js
   const CHAR_DEFS = GChar.DEFS;
@@ -51,7 +52,7 @@ const Scene3D = (() => {
     size:104, race:{x:42.4,z:0,rin:1.7,rout:8,hs:9.6,ro:8.6,lanes:7}, rentLot:{x:-42,z:3}, wheel:{x:14,z:42,r:3}, spawn:{x:0,z:9}, portal:{x:0,z:37,w:6,d:3,to:'fishing',label:'🚤 Đảo câu cá'},
     buildings:[
       Bd(-22,-27,10,6,8,0,0xe8876f,0xc96a55,'shop','SUNNY MART'), Bd(22,-27,10,6,10,0,0x8b72c8,0x6a53a8,'lottery','XỔ SỐ CITY'),
-      Bd(-27,-9,6,10,9,H,0x4fa3ab,0x2f7f88,'cinema','RẠP PHIM'), Bd(-27,9,6,8,6,H,0x6fb7b0,0x3f8f8c,'fishshop','ĐÁO CÂU CÁ'),
+      Bd(-27,-9,6,10,9,H,0x4fa3ab,0x2f7f88,'cinema','RẠP PHIM'), Bd(-27,9,6,8,6,H,0x6fb7b0,0x3f8f8c,'fishshop','ĐẢO CÂU CÁ'),
       Bd(27,-9,6,10,10,-H,0xd77aa0,0xb55a82,'shop','PIZZA HOUSE'), Bd(27,9,6,10,8,-H,0xf0a35e,0xcf8040,'rental','THUÊ ĐỒ'),
       Bd(-22,27,10,6,9,Math.PI,0x8b72c8,0x6a53a8,'shop','MOON BAR'), Bd(22,27,10,6,8,Math.PI,0x4fa3ab,0x2f7f88,'shop','HAPPY TOYS'),
     ],
@@ -59,11 +60,7 @@ const Scene3D = (() => {
     lamps:P2([[-15.5,-9],[-15.5,9],[15.5,-9],[15.5,9],[-6,-15.5],[6,-15.5],[-6,15.5],[6,15.5]]),
     flowers:P2([[-6.5,-12.5],[6.5,-12.5],[-6.5,12.5],[6.5,12.5]]),
     benches:[], fountain:{x:0,z:0},
-    screen:{x:0, z:-37.5, w:16, h:9, y:1.4},
-    games:[
-      {id:'memory', name:'Lật hình',  icon:'🃏', x:-12, z:0,  color:0xec4899},
-      {id:'lo',     name:'Đánh lô',   icon:'🎟', x:0,   z:13, color:0xf59e0b},
-    ]
+    screen:{x:0, z:-37.5, w:16, h:9, y:1.4}
   });
   [[-7,-7],[7,-7],[-7,7],[7,7]].forEach(([bx,bz])=>ZONES.plaza.benches.push({x:bx, z:bz, ry:Math.atan2(-bx,-bz)}));
   [-9,-4.5,4.5,9].forEach(bx=>ZONES.plaza.benches.push({x:bx, z:-29, ry:Math.PI})); // ghế hàng 1 hướng về màn hình
@@ -86,8 +83,10 @@ const Scene3D = (() => {
     container.appendChild(renderer.domElement);
 
     // lights
-    const amb = new THREE.AmbientLight(0xffffff, 0.85); scene.add(amb);
-    const sun = new THREE.DirectionalLight(0xfff5e0, 0.6);
+    // Ánh sáng cân bằng: tổng ~1.0 ở mặt nằm ngang (trước đây 0.85 + 0.48 = 1.33 → gạch/nền bị cháy sáng thành trắng)
+    scene.add(new THREE.HemisphereLight(0xeaf6ff, 0xcfb894, 0.30));
+    scene.add(new THREE.AmbientLight(0xffffff, 0.32));
+    const sun = new THREE.DirectionalLight(0xfff1d6, 0.52);
     sun.position.set(20, 30, 10); sun.castShadow = true;
     sun.shadow.mapSize.set(2048,2048);
     sun.shadow.camera.left=-60; sun.shadow.camera.right=60;
@@ -152,17 +151,127 @@ const Scene3D = (() => {
     g.strokeStyle='rgba(120,70,40,.18)'; g.lineWidth=2; g.strokeRect(0,0,128,128);
     const t=new THREE.CanvasTexture(c); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(rx,ry); t.anisotropy=maxAniso(); return t;
   }
-  function makeTree(x,z,s,base=true){
-    const t=new THREE.Group(), lm=c=>new THREE.MeshLambertMaterial({color:c});
-    if(base){ // bệ tròn đất nâu + viền vữa xám (như mẫu)
-      const pad=new THREE.Mesh(new THREE.CylinderGeometry(1.6,1.7,0.18,20),lm(0x9a7a55)); pad.position.y=0.09; pad.receiveShadow=true; t.add(pad);
-      const curb=new THREE.Mesh(new THREE.TorusGeometry(1.65,0.09,6,24),lm(0xb8bcc2)); curb.rotation.x=Math.PI/2; curb.position.y=0.18; t.add(curb);
-    }
-    const tr=new THREE.Mesh(new THREE.CylinderGeometry(0.22,0.32,2.4,7),lm(0x8a5a35)); tr.position.y=1.35; tr.castShadow=true; t.add(tr);
-    // tán tròn: 1 quả cầu to + 2 quả nhỏ bên
-    [[0,3.4,0,1.25,0x4a9e4f],[0.7,3.0,0.3,0.85,0x57b05c],[-0.6,3.1,-0.4,0.8,0x3f9248]].forEach(([a,b2,c,r,col])=>{ const l=new THREE.Mesh(new THREE.SphereGeometry(r,10,8),lm(col)); l.position.set(a,b2,c); l.castShadow=true; t.add(l); });
-    t.scale.setScalar(s); t.position.set(x,0,z); worldGroup.add(t);
+  // ===== Gộp nhiều khối thành 1 mesh (màu theo đỉnh): 1 toà nhà (hàng trăm hộp) hoặc 1 cây (~7 khối) → 1 draw call =====
+  const _boxG = new THREE.BoxGeometry(1,1,1);
+  const _bMat = new THREE.MeshLambertMaterial({ vertexColors:true });
+  const tint = (hex,k)=>{ const r=Math.min(255,((hex>>16)&255)*k)|0, g=Math.min(255,((hex>>8)&255)*k)|0, b=Math.min(255,(hex&255)*k)|0; return (r<<16)|(g<<8)|b; };
+  function Batch(){
+    const pos=[], nor=[], col=[], idx=[]; let vc=0;
+    const v=new THREE.Vector3(), n=new THREE.Vector3(), c=new THREE.Color(), nm=new THREE.Matrix3(), m4=new THREE.Matrix4();
+    const api = {
+      geo(g, mat, hex){
+        c.setHex(hex); nm.getNormalMatrix(mat);
+        const P=g.attributes.position, N=g.attributes.normal, I=g.index;
+        for(let i=0;i<P.count;i++){
+          v.fromBufferAttribute(P,i).applyMatrix4(mat); n.fromBufferAttribute(N,i).applyMatrix3(nm).normalize();
+          pos.push(v.x,v.y,v.z); nor.push(n.x,n.y,n.z); col.push(c.r,c.g,c.b);
+        }
+        if(I) for(let i=0;i<I.count;i++) idx.push(I.getX(i)+vc); else for(let i=0;i<P.count;i++) idx.push(i+vc);
+        vc += P.count; return api;
+      },
+      box(w,h,d,x,y,z,hex){ m4.makeScale(w,h,d); m4.setPosition(x,y,z); return api.geo(_boxG,m4,hex); },
+      build(){
+        const g=new THREE.BufferGeometry();
+        g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+        g.setAttribute('normal',new THREE.Float32BufferAttribute(nor,3));
+        g.setAttribute('color',new THREE.Float32BufferAttribute(col,3));
+        g.setIndex(vc>65535 ? new THREE.Uint32BufferAttribute(idx,1) : new THREE.Uint16BufferAttribute(idx,1));
+        const mesh=new THREE.Mesh(g,_bMat); mesh.castShadow=mesh.receiveShadow=true; return mesh;
+      }
+    };
+    return api;
   }
+
+  // ===== CÂY low-poly: tán là các khối 20 mặt méo nhẹ + shading phẳng (mặt cắt rõ như ảnh mẫu), mỗi cây một vẻ =====
+  function makeBlobGeo(seed, jit){
+    const g=new THREE.IcosahedronGeometry(1,1), P=g.attributes.position;
+    const hs=(x,y,z)=>{ const t=Math.sin(x*127.1+y*311.7+z*74.7+seed*19.19)*43758.5453; return t-Math.floor(t); };
+    for(let i=0;i<P.count;i++){
+      const x=P.getX(i), y=P.getY(i), z=P.getZ(i);
+      const k=1+(hs(Math.round(x*1000),Math.round(y*1000),Math.round(z*1000))-0.5)*jit;   // làm tròn để đỉnh trùng nhau cùng méo như nhau → không nứt mặt
+      P.setXYZ(i,x*k,y*k*0.93,z*k);
+    }
+    g.deleteAttribute('normal'); g.computeVertexNormals();   // geometry không index → pháp tuyến theo từng mặt = shading phẳng
+    return g;
+  }
+  const _blobs=[0,1,2].map(sd=>makeBlobGeo(sd,0.26));
+  const _trunkG=new THREE.CylinderGeometry(0.15,0.3,2.3,6), _brG=new THREE.CylinderGeometry(0.07,0.12,1.0,5);
+  const _rimG=new THREE.CylinderGeometry(1.75,1.8,0.22,18), _soilG=new THREE.CylinderGeometry(1.5,1.55,0.26,18);
+  const TREE_PAL=[[0x3a9a4a,0x4eb057,0x2d8040,0x63c068],[0x2f8a4b,0x43a25d,0x25763f,0x57b36f],[0x4b9f3c,0x61b64a,0x3a8832,0x76c85c]];
+  function makeTree(x,z,s,base=true){
+    const h=Math.abs(Math.sin(x*12.9898+z*78.233)*43758.5453)%1;   // số ngẫu nhiên cố định theo vị trí
+    const pal=TREE_PAL[Math.floor(h*3)%3], r0=1.3*(0.92+((h*7)%1)*0.22), v0=Math.floor(h*9)%3;
+    const B=Batch(), m=new THREE.Matrix4(), q=new THREE.Quaternion(), e=new THREE.Euler(), sc=new THREE.Vector3(), p=new THREE.Vector3();
+    const put=(g,px,py,pz,sx,sy,sz,ry,rz,hex)=>{ e.set(0,ry,rz||0); q.setFromEuler(e); m.compose(p.set(px,py,pz),q,sc.set(sx,sy,sz)); B.geo(g,m,hex); };
+    if(base){ put(_rimG,0,0.11,0,1,1,1,0,0,0xd9c8a4); put(_soilG,0,0.15,0,1,1,1,0,0,0x7b5636); }   // viền đá kem + đất nâu
+    put(_trunkG,0,1.3,0,1,1,1,h*6,0,0x7a4e2d);
+    put(_brG,0.26,2.15,0.04,1,1,1,0,-0.75,0x7a4e2d);
+    [[0,3.45,0,1,0],[0.9,3.0,0.3,0.68,1],[-0.85,3.1,-0.4,0.66,2],[0.05,4.25,-0.15,0.6,3],[-0.1,3.0,0.95,0.55,1]].forEach(([px,py,pz,k,ci],i)=>{
+      put(_blobs[(v0+i)%3],px*r0/1.3,py,pz*r0/1.3,r0*k,r0*k,r0*k,h*6+i*1.7,0,pal[ci]);
+    });
+    const mesh=B.build(); mesh.scale.setScalar(s); mesh.position.set(x,0,z); worldGroup.add(mesh);
+  }
+
+  // ===== TOÀ NHÀ: 1 mesh/toà. Cột góc, dải sàn, cửa sổ có nẹp + bậu + chậu hoa trên cả 4 mặt, mái hiên sọc 3 bậc, biển hiệu, mái có lan can + ống khói + máy lạnh + ăng-ten =====
+  function makeBuilding(b){
+    const sw=Math.abs(Math.sin(b.ry||0))>.5, lw=sw?b.d:b.w, ld=sw?b.w:b.d, H=b.h, y0=0.45;
+    const B=Batch(), cream=0xf3e4bf, glassA=0x8fd0e0, glassB=0xa6dbe8, wallC=b.color, darkC=b.roof, trim=tint(wallC,1.14);
+    const fl=Math.max(2,Math.round(H/3)), fh=H/fl;
+    // móng + thân + cột góc + dải sàn liên tầng
+    B.box(lw+0.5,y0,ld+0.5,0,y0/2,0,0xcdbb98);
+    B.box(lw,H,ld,0,y0+H/2,0,wallC);
+    [[-1,-1],[1,-1],[-1,1],[1,1]].forEach(([sx,sz])=>B.box(0.55,H,0.55,sx*lw/2,y0+H/2,sz*ld/2,trim));
+    for(let f=1;f<fl;f++) B.box(lw+0.3,0.26,ld+0.3,0,y0+f*fh,0,cream);
+    // mái: tấm mái hiên ra + lan can + sàn mái + ống khói + máy lạnh + ăng-ten
+    const ry0=y0+H, pw=lw+0.8, pd=ld+0.8, pt=tint(darkC,1.15);
+    B.box(pw,0.32,pd,0,ry0+0.16,0,darkC);
+    B.box(pw,0.42,0.2,0,ry0+0.53,pd/2-0.1,pt); B.box(pw,0.42,0.2,0,ry0+0.53,-pd/2+0.1,pt);
+    B.box(0.2,0.42,pd-0.4,pw/2-0.1,ry0+0.53,0,pt); B.box(0.2,0.42,pd-0.4,-pw/2+0.1,ry0+0.53,0,pt);
+    B.box(lw+0.4,0.06,ld+0.4,0,ry0+0.35,0,tint(darkC,0.8));
+    B.box(0.75,1.1,0.75,lw*0.28,ry0+0.9,ld*0.2,tint(wallC,0.85)); B.box(0.95,0.14,0.95,lw*0.28,ry0+1.5,ld*0.2,darkC);
+    B.box(1.3,0.65,0.95,-lw*0.26,ry0+0.7,-ld*0.18,0xd5dae0); B.box(0.6,0.06,0.6,-lw*0.26,ry0+1.05,-ld*0.18,0x6c7480);
+    // cửa sổ tầng trên: face 0=+z (mặt tiền) 1=-z (sau) 2=+x 3=-x
+    const win=(face,u,y,k)=>{
+      const g=(k&1)?glassA:glassB;
+      if(face<2){ const sg=face===0?1:-1, zz=sg*ld/2;
+        B.box(1.3,1.5,0.1,u,y,zz+sg*0.03,cream); B.box(1.02,1.22,0.12,u,y,zz+sg*0.06,g);
+        B.box(0.07,1.22,0.05,u,y,zz+sg*0.11,cream); B.box(1.02,0.07,0.05,u,y,zz+sg*0.11,cream);
+        B.box(1.6,0.14,0.34,u,y-0.82,zz+sg*0.17,cream);
+        if(face===0 && k%2===0 && fh>2.9){   // chậu hoa dưới cửa sổ
+          B.box(1.3,0.22,0.3,u,y-0.98,zz+0.38,0x8a5a3a); B.box(1.2,0.12,0.24,u,y-0.84,zz+0.38,0x3f9a4c);
+          for(let qd=-1;qd<=1;qd++) B.box(0.2,0.2,0.2,u+qd*0.38,y-0.7,zz+0.38,qd%2?0xf06a8d:0xff8fa8);
+        }
+      } else { const sg=face===2?1:-1, xx=sg*lw/2;
+        B.box(0.1,1.5,1.3,xx+sg*0.03,y,u,cream); B.box(0.12,1.22,1.02,xx+sg*0.06,y,u,g);
+        B.box(0.05,1.22,0.07,xx+sg*0.11,y,u,cream); B.box(0.05,0.07,1.02,xx+sg*0.11,y,u,cream);
+        B.box(0.34,0.14,1.6,xx+sg*0.17,y-0.82,u,cream);
+      }
+    };
+    const nWin=Math.max(3,Math.floor(lw/2.4)), wsp=lw/nWin, mcol=Math.max(2,Math.floor(ld/2.6)), spz=ld/mcol;
+    for(let f=1;f<fl;f++){ const wy=y0+fh*f+fh*0.5;
+      for(let i=0;i<nWin;i++){ const u=-lw/2+wsp*(i+.5); win(0,u,wy,i+f); win(1,u,wy,i+f+1); }
+      for(let j=0;j<mcol;j++){ const u=-ld/2+spz*(j+.5); win(2,u,wy,j+f); win(3,u,wy,j+f+1); }
+    }
+    // tầng trệt mặt tiền: kính lớn + cửa chính + bậc thềm + mái hiên sọc 3 bậc dốc xuống + biển hiệu
+    const nG=Math.max(2,Math.floor(lw/3));
+    for(let i=0;i<nG;i++){ const u=-lw/2+(i+.5)*(lw/nG); if(Math.abs(u)<1.1) continue;
+      B.box(1.7,2.3,0.1,u,y0+1.2,ld/2+0.03,cream); B.box(1.4,2.0,0.12,u,y0+1.2,ld/2+0.06,glassA);
+      B.box(0.07,2.0,0.05,u,y0+1.2,ld/2+0.11,cream); B.box(1.4,0.07,0.05,u,y0+1.4,ld/2+0.11,cream); }
+    B.box(1.7,2.6,0.1,0,y0+1.3,ld/2+0.03,cream); B.box(1.35,2.45,0.14,0,y0+1.25,ld/2+0.07,0x3b2a22); B.box(0.1,0.1,0.06,0.45,y0+1.2,ld/2+0.16,0xe7c35a);
+    B.box(2.4,0.3,0.6,0,0.15,ld/2+0.55,0xd8c8a8);
+    const ns=Math.max(4,Math.round(lw/1.1)), sw2=lw/ns;
+    [[3.1,0.3],[2.92,0.62],[2.74,0.94]].forEach(([ay,az])=>{ for(let i=0;i<ns;i++) B.box(sw2,0.17,0.4,-lw/2+sw2*(i+.5),ay,ld/2+az,i%2?0xfff8ec:tint(darkC,0.82)); });
+    B.box(lw*0.78,0.62,0.16,0,3.3,ld/2+0.12,darkC); B.box(lw*0.78+0.18,0.1,0.2,0,3.64,ld/2+0.12,cream); B.box(lw*0.78+0.18,0.1,0.2,0,2.96,ld/2+0.12,cream);
+    // tầng trệt 2 bên + mặt sau
+    [[1],[-1]].forEach(([sg])=>{ const mm=Math.max(1,Math.floor(ld/3.2)), sp=ld/mm; for(let j=0;j<mm;j++){ const zz=-ld/2+sp*(j+.5); B.box(0.1,2.0,1.4,sg*lw/2+sg*0.03,y0+1.2,zz,cream); B.box(0.12,1.7,1.12,sg*lw/2+sg*0.06,y0+1.2,zz,glassB); } });
+    B.box(1.5,2.5,0.1,0,y0+1.25,-ld/2-0.03,cream); B.box(1.2,2.35,0.12,0,y0+1.2,-ld/2-0.06,0x4a3a30);
+    const nb=Math.max(1,Math.floor(lw/4)); for(let i=0;i<nb;i++){ const u=-lw/2+(i+.5)*lw/nb; if(Math.abs(u)<1.3) continue; B.box(1.4,1.5,0.1,u,y0+1.5,-ld/2-0.03,cream); B.box(1.15,1.25,0.12,u,y0+1.5,-ld/2-0.06,glassB); }
+    const g=new THREE.Group(); g.add(B.build());
+    const sg2=makeTextSprite(b.name,{fontsize:32,color:'#ffe08a',bg:'rgba(0,0,0,0)'});
+    const sh=Math.min(0.5, lw*0.72/sg2.userData.ar); sg2.position.set(0,3.3,ld/2+0.28); sg2.scale.set(sh*sg2.userData.ar,sh,1); g.add(sg2);
+    g.position.set(b.x,0,b.z); g.rotation.y=b.ry||0; worldGroup.add(g);
+  }
+
   function buildPlazaFloor(){
     const L=c=>new THREE.MeshLambertMaterial(typeof c==='object'?c:{color:c});
     const flat=(w,d,x,y,zz,m)=>{ const o=new THREE.Mesh(new THREE.PlaneGeometry(w,d),m); o.rotation.x=-Math.PI/2; o.position.set(x,y,zz); o.receiveShadow=true; worldGroup.add(o); };
@@ -267,14 +376,21 @@ const Scene3D = (() => {
     raceCanvas=document.createElement('canvas'); raceCanvas.width=1024; raceCanvas.height=384; raceTex=new THREE.CanvasTexture(raceCanvas);
     const pn=new THREE.Mesh(new THREE.PlaneGeometry(14,5.4),new THREE.MeshBasicMaterial({map:raceTex})); pn.position.set(0,3.8,0.27); bd.add(pn);
     bd.position.set(R.x+R.ro+0.95,0,R.z); bd.rotation.y=-Math.PI/2; worldGroup.add(bd); setRaceBoard('Sơ Cấp','VÉ CỦA BẠN','—','TRẠNG THÁI','Đang tải…'); setRacers(Array(N).fill(0),false,-1);
-    // --- bãi thuê xe + máy bay ---
-    box(10,0.06,26,Lt.x,0.03,Lt.z,0x3a3f47);
-    [0xe85c5c,0x4aa3df,0xf2c94c,0x8fc15a].forEach((c,i)=>{ const g=new THREE.Group(); box(3.2,0.8,1.6,0,0.7,0,c,g); box(1.7,0.7,1.4,-0.1,1.4,0,0x2b3440,g);
-      [[-1,-.85],[1,-.85],[-1,.85],[1,.85]].forEach(([x,zz])=>{ const w=new THREE.Mesh(new THREE.CylinderGeometry(.35,.35,.3,10),L(0x111111)); w.rotation.x=Math.PI/2; w.position.set(x,.35,zz); g.add(w); });
-      g.position.set(Lt.x,0,Lt.z-9+i*3.6); worldGroup.add(g); });
-    [0x4aa3df,0xf2c94c].forEach((c,i)=>{ const g=new THREE.Group(), fu=new THREE.Mesh(new THREE.CylinderGeometry(.45,.35,3.4,10),L(c)); fu.rotation.z=Math.PI/2; fu.position.y=1; fu.castShadow=true; g.add(fu);
-      box(0.9,.12,4.4,0.1,1.1,0,c,g); box(.5,.9,.1,-1.6,1.5,0,c,g); box(.4,.1,1.6,-1.6,1.1,0,c,g); box(.08,.1,1.5,1.75,1,0,0x333333,g); g.position.set(Lt.x,0,Lt.z+5.5+i*4.6); worldGroup.add(g); });
-    const ls=makeTextSprite('THUÊ XE · MÁY BAY',{fontsize:30,color:'#fff',bg:'rgba(30,50,80,.9)'}); ls.position.set(Lt.x+3,3.6,Lt.z-10); ls.scale.set(0.9*ls.userData.ar,0.9,1); worldGroup.add(ls);
+    // --- bãi thuê xe + máy bay: xe thật đậu trong ô kẻ vạch, thuê qua NPC (xe được thuê rời bãi, trả về khi xuống) ---
+    box(10,0.06,27,Lt.x,0.03,Lt.z+0.5,0x3a3f47);
+    lotSlots = [];
+    Vehicles.CARS.forEach((c,i)=> lotSlots.push({kind:'car', idx:i, name:c.name, color:c.color, x:Lt.x, z:Lt.z-10.5+i*3.6, half:1.8}));
+    Vehicles.PLANES.forEach((c,i)=> lotSlots.push({kind:'plane', idx:i, name:c.name, color:c.color, x:Lt.x-0.3, z:Lt.z+4.9+i*5.6, half:2.8}));
+    const lines = new Set();
+    lotSlots.forEach((sl,i)=>{
+      sl.i = i; sl.yaw = Math.PI/2;                        // đầu xe hướng +X (ra phía công viên)
+      const m = Vehicles.build(sl.kind, sl.color); m.position.set(sl.x,0,sl.z); m.rotation.y = sl.yaw; m.visible = !lotTaken[i];
+      worldGroup.add(m); sl.mesh = m;
+      [sl.z-sl.half, sl.z+sl.half].forEach(zb=>{ const k=zb.toFixed(1); if(lines.has(k)) return; lines.add(k); box(4.8,0.02,0.1,Lt.x,0.07,zb,0xf2c94c); });   // vạch ô đỗ
+    });
+    const ls=makeTextSprite('THUÊ XE · MÁY BAY',{fontsize:30,color:'#fff',bg:'rgba(30,50,80,.9)'}); ls.position.set(Lt.x+1,3.1,Lt.z-11); ls.scale.set(0.9*ls.userData.ar,0.9,1); worldGroup.add(ls);
+    { const hw=0.45*ls.scale.x; [-hw,hw].forEach(dx=> box(0.14,2.7,0.14,Lt.x+1+dx,1.35,Lt.z-11,0x2b3440)); }   // 2 cột đỡ biển
+    lotBadge = null; refreshLotBadge();
     // --- vòng quay + sàn gỗ ---
     const wg=new THREE.Group(), rot=new THREE.Group(), gond=[]; rot.position.y=9;
     rot.add(new THREE.Mesh(new THREE.TorusGeometry(7,0.18,6,40),L(0x3f8f8c)));
@@ -284,6 +400,25 @@ const Scene3D = (() => {
     wg.position.set(W.x,0,W.z); worldGroup.add(wg); ferris={rot,gond};
     box(10,0.3,7,-12,0.15,39,0xc99a6b); box(4,0.15,1,-12,0.075,35,0xc99a6b);
   }
+
+  // ===== BÃI THUÊ XE: số xe còn / tổng (bong bóng trên bãi), xe đang được thuê thì ẩn khỏi bãi =====
+  function lotText(){
+    const c = k => lotSlots.filter(s=>s.kind===k), f = k => c(k).filter(s=>!lotTaken[s.i]).length;
+    return `🚗 Thuê xe · ${f('car')}/${c('car').length} · ✈ ${f('plane')}/${c('plane').length}`;
+  }
+  function refreshLotBadge(){
+    const Lt = ZONES.plaza.rentLot; if(!worldGroup || !Lt || !lotSlots.length) return;
+    if(lotBadge){ worldGroup.remove(lotBadge); lotBadge.material.map.dispose(); lotBadge.material.dispose(); }
+    lotBadge = makeTextSprite(lotText(), {fontsize:30, color:'#3b3b3b', bg:'rgba(255,255,255,.94)'});
+    lotBadge.position.set(Lt.x+1, 5.2, Lt.z+3); lotBadge.scale.set(0.5*lotBadge.userData.ar, 0.5, 1); lotBadge.visible = lotBadgeOn; worldGroup.add(lotBadge);
+  }
+  function setLotBadgeVisible(v){ lotBadgeOn = !!v; if(lotBadge) lotBadge.visible = lotBadgeOn; }   // ẩn khi đang ngồi xe cho đỡ che màn hình
+  function setLotTaken(i, taken){
+    lotTaken[i] = !!taken;
+    const sl = lotSlots[i]; if(sl && sl.mesh) sl.mesh.visible = !taken;
+    refreshLotBadge();
+  }
+  function getLotSlots(){ return lotSlots.map(s=>({ i:s.i, kind:s.kind, name:s.name, color:s.color, x:s.x, z:s.z, yaw:s.yaw, taken:!!lotTaken[s.i] })); }
 
   function buildZone(zoneId){
     if(worldGroup){ scene.remove(worldGroup); }
@@ -309,39 +444,8 @@ const Scene3D = (() => {
       ring.rotation.x=-Math.PI/2; ring.position.y=0.11; ring.receiveShadow=true; worldGroup.add(ring); // sân lát quanh đài phun
     }
 
-    // buildings (low-poly nhiều tầng, mặt tiền quay theo ry)
-    z.buildings.forEach((b,bi)=>{
-      const g=new THREE.Group(), sw=Math.abs(Math.sin(b.ry||0))>.5, lw=sw?b.d:b.w, ld=sw?b.w:b.d;
-      const add=(w,h,d,x,y,zz,m)=>{ const mesh=new THREE.Mesh(new THREE.BoxGeometry(w,h,d), m instanceof THREE.Material? m : new THREE.MeshLambertMaterial({color:m})); mesh.position.set(x,y,zz); mesh.castShadow=true; mesh.receiveShadow=true; g.add(mesh); return mesh; };
-      const cream=0xf0e0b8, glass=0x8fc8d8, wallC=b.color, darkC=b.roof;
-      // móng kem + thân tường pastel
-      add(lw+0.4,0.4,ld+0.4,0,0.2,0,0xd8c8a8);
-      add(lw,b.h,ld,0,b.h/2+0.4,0,wallC);
-      // dải sàn liên tầng + mái parapet + ống khói
-      const fl=Math.max(2,Math.round(b.h/3)), fh=b.h/fl;
-      for(let f=1;f<fl;f++) add(lw+0.15,0.25,ld+0.15,0,f*fh+0.4,0,cream);
-      add(lw+0.5,0.5,ld+0.5,0,b.h+0.65,0,darkC);
-      add(0.7,1.0,0.7,lw*0.3,b.h+1.4,ld*0.25,darkC);
-      // cửa sổ các tầng trên (mặt tiền + 2 bên): khung kem + kính xanh
-      const nWin=Math.max(3,Math.floor(lw/2.4)), wsp=lw/nWin;
-      const mcol=Math.max(2,Math.floor(ld/2.6)), spz=ld/mcol;
-      for(let f=1;f<fl;f++){ const wy=fh*f+fh*0.5+0.4;
-        for(let i=0;i<nWin;i++){ const x=-lw/2+wsp*(i+.5);
-          add(1.25,1.45,0.1,x,wy,ld/2+0.03,cream); add(1.0,1.2,0.12,x,wy,ld/2+0.06,glass); }
-        for(let j=0;j<mcol;j++){ const zz=-ld/2+spz*(j+.5);
-          add(0.1,1.45,1.25, lw/2+0.03,wy,zz,cream); add(0.12,1.2,1.0, lw/2+0.06,wy,zz,glass);
-          add(0.1,1.45,1.25,-lw/2-0.03,wy,zz,cream); add(0.12,1.2,1.0,-lw/2-0.06,wy,zz,glass); }
-      }
-      // tầng trệt shop: kính lớn + cửa giữa + awning sọc + biển hiệu
-      const nG=Math.max(2,Math.floor(lw/3));
-      for(let i=0;i<nG;i++){ const x=-lw/2+(i+.5)*(lw/nG); if(Math.abs(x)<0.9) continue;
-        add(1.6,2.2,0.1,x,1.5,ld/2+0.03,cream); add(1.35,1.95,0.12,x,1.5,ld/2+0.06,glass); }
-      add(1.4,2.4,0.12,0,1.4,ld/2+0.06,0x3b2a22);
-      for(let i=0;i<6;i++) add(lw/6,0.12,1.1,-lw/2+lw/12+i*lw/6,2.85,ld/2+0.55, i%2?0xffffff:darkC);
-      add(lw*0.8,0.7,0.15,0,3.35,ld/2+0.1,darkC);
-      const sg=makeTextSprite(b.name,{fontsize:32,color:'#ffe08a',bg:'rgba(0,0,0,0)'}); sg.position.set(0,3.35,ld/2+0.35); sg.scale.set(0.7*sg.userData.ar,0.7,1); g.add(sg);
-      g.position.set(b.x,0,b.z); g.rotation.y=b.ry||0; worldGroup.add(g);
-    });
+    // buildings (low-poly nhiều tầng, mặt tiền quay theo ry) — dựng trong makeBuilding()
+    z.buildings.forEach(makeBuilding);
 
     // trees
     (z.trees||[]).forEach(t=>makeTree(t.x,t.z,1));
@@ -438,16 +542,6 @@ const Scene3D = (() => {
       g.position.set(sc.x, 0, sc.z); worldGroup.add(g);
       screenInfo = sc; setScreenText('GCITY TV', 'Chạm NPC 📺 cạnh sân khấu để chọn video');
     }
-    // ô mini game (pad phát sáng + viên ngọc xoay + nhãn)
-    (z.games||[]).forEach(gm=>{
-      const pad = new THREE.Mesh(new THREE.CylinderGeometry(1.6,1.6,0.2,24), new THREE.MeshLambertMaterial({color:gm.color}));
-      pad.position.set(gm.x, 0.1, gm.z); worldGroup.add(pad);
-      const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.6), new THREE.MeshLambertMaterial({color:gm.color, emissive:gm.color, emissiveIntensity:0.5}));
-      gem.position.set(gm.x, 2, gm.z); worldGroup.add(gem); spinners.push(gem);
-      const lb = makeTextSprite(gm.icon+' '+gm.name, {fontsize:30, color:'#fff', bg:'rgba(0,0,0,.7)'});
-      lb.position.set(gm.x, 3.7, gm.z); lb.scale.set(0.6*lb.userData.ar, 0.6, 1); worldGroup.add(lb);
-    });
-
     scene.add(worldGroup);
     return z;
   }
@@ -533,7 +627,6 @@ const Scene3D = (() => {
     if(z.screen && Math.abs(x-z.screen.x)<z.screen.w/2+r && Math.abs(zpos-z.screen.z)<1.2+r) return true;
     if(zoneId==='plaza' && Math.hypot(x,zpos)>53) return true;
     if(z.race && Math.hypot(x-z.race.x, Math.max(Math.abs(zpos-z.race.z)-z.race.hs,0)) < z.race.ro+r) return true;
-    if(z.rentLot && Math.abs(x-z.rentLot.x)<5.5 && Math.abs(zpos-z.rentLot.z)<13) return true;
     if(z.wheel && Math.hypot(x-z.wheel.x,zpos-z.wheel.z)<z.wheel.r+r) return true;
     if(z.water){ const w=z.water; if(Math.abs(x-w.x)<w.w/2 && Math.abs(zpos-w.z)<w.d/2 && zpos>w.z-w.d/2+2) return true; }
     return false;
@@ -561,7 +654,7 @@ const Scene3D = (() => {
     const Z = ZONES[zoneId]; let best = null, bd = 1e9;
     const test = (kind, ref, px, pz, rad, label)=>{ const d = Math.hypot(x-px, z-pz); if(d<rad && d<bd){ bd=d; best={kind, ref, label}; } };
     Z.buildings.forEach(b=>{ const ry=b.ry||0, ld=Math.abs(Math.sin(ry))>.5?b.w:b.d; test('building', b, b.x+Math.sin(ry)*ld/2, b.z+Math.cos(ry)*ld/2, 4.5, b.name); });
-    if(Z.rentLot) test('vehicle', Z.rentLot, Z.rentLot.x+6, Z.rentLot.z, 6, '🚗 Thuê xe · 4/4 · ✈ 2/2');
+    if(Z.rentLot) test('vehicle', Z.rentLot, Z.rentLot.x+6, Z.rentLot.z, 6, lotText());
     if(!best && Z.screen) test('screen', Z.screen, Z.screen.x, Z.screen.z+8, 9, '📺 Màn hình lớn (chọn video)');
     return best;
   }
@@ -637,6 +730,6 @@ const Scene3D = (() => {
   }
 
   return { init, buildZone, createCharacter, setChatBubble, updateCharacter,
-    updateCamera, getMoveDir, collides, atPortal, nearBuilding, atDock, render, nearSpot, pickBench, nearBench, setTapHandler, setScreenText, screenCorners2D, setRacers, setRaceBoard,
+    updateCamera, getMoveDir, collides, atPortal, nearBuilding, atDock, render, nearSpot, pickBench, nearBench, setTapHandler, setScreenText, screenCorners2D, setRacers, setRaceBoard, getLotSlots, setLotTaken, setLotBadgeVisible, lotText,
     getZone, CHAR_DEFS, get scene(){return scene;}, get camera(){return camera;}, get pixelRatio(){return RES.cur;} };
 })();

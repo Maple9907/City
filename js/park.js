@@ -50,13 +50,75 @@ const Park = (() => {
     return m ? m[1] : null;
   }
   const PLAYING = ['📺 ĐANG PHÁT', 'Lại gần màn hình để xem'];
-  function playVideo(input){
+  function playVideo(input, save=true){
     const id = parseYT(input);
     if(!id){ UI.toast('Link YouTube không hợp lệ'); return; }
     videoId = id;
     frame.src = `https://www.youtube.com/embed/${id}?autoplay=1&rel=0&playsinline=1`;
     Scene3D.setScreenText(...PLAYING);
-    try { localStorage.setItem('gcity_yt', input); } catch(e){}
+    if(save){ try { localStorage.setItem('gcity_yt', input); } catch(e){} }
+  }
+
+  // ---------- Tìm video YouTube bằng từ khóa (YouTube Data API v3) ----------
+  // Mỗi lượt tìm tốn 100 đơn vị quota (miễn phí 10.000/ngày ~ 100 lượt) nên có cache theo từ khóa.
+  const ytCache = new Map();
+  let searchSeq = 0;
+  const decodeHTML = s => new DOMParser().parseFromString(s || '', 'text/html').documentElement.textContent;
+  function note(box, msg){
+    box.innerHTML = '';
+    const d = document.createElement('div'); d.className = 'tv-note'; d.textContent = msg; box.appendChild(d);
+  }
+  function renderResults(box, items){
+    box.innerHTML = '';
+    if(!items.length){ note(box, 'Không tìm thấy video nào, thử từ khóa khác nhé.'); return; }
+    items.forEach(it=>{
+      const b = document.createElement('button'); b.className = 'tv-item'; b.type = 'button';
+      const img = document.createElement('img'); img.src = `https://i.ytimg.com/vi/${it.id}/mqdefault.jpg`; img.alt = ''; img.loading = 'lazy';
+      const t = document.createElement('div');
+      const h = document.createElement('b'); h.textContent = it.title;
+      const c = document.createElement('small'); c.textContent = it.channel;
+      t.append(h, c); b.append(img, t);
+      b.onclick = ()=>{ playVideo(it.id, false); UI.toast('📺 Đang chiếu: ' + it.title.slice(0, 40)); UI.closePanel('tvPanel'); };
+      box.appendChild(b);
+    });
+  }
+  async function searchVideos(q){
+    const box = $('tvResults'), key = (GCITY_CONFIG.YOUTUBE_API_KEY || '').trim();
+    if(!key){ note(box, 'Chưa có YouTube API key (js/config.js → YOUTUBE_API_KEY). Tạm thời hãy dán link video.'); return; }
+    const ck = q.toLowerCase();
+    if(ytCache.has(ck)){ renderResults(box, ytCache.get(ck)); return; }
+    const my = ++searchSeq;
+    note(box, '⏳ Đang tìm…');
+    try {
+      const u = new URL('https://www.googleapis.com/youtube/v3/search');
+      Object.entries({ part:'snippet', type:'video', maxResults:8, q, key,
+        videoEmbeddable:'true', videoSyndicated:'true', safeSearch:'moderate', relevanceLanguage:'vi' })
+        .forEach(([k,v])=> u.searchParams.set(k, v));
+      const r = await fetch(u), j = await r.json();
+      if(my !== searchSeq) return;   // đã có lượt tìm mới hơn
+      if(j.error){
+        const why = (j.error.errors && j.error.errors[0] && j.error.errors[0].reason) || '';
+        note(box, why === 'quotaExceeded' ? 'Hôm nay hết lượt tìm miễn phí rồi, hãy dán link video nhé.'
+               : /keyInvalid|ipRefererBlocked|forbidden/i.test(why) ? 'API key không hợp lệ hoặc bị chặn theo tên miền.'
+               : 'Không tìm được: ' + (j.error.message || 'lỗi không rõ'));
+        return;
+      }
+      const items = (j.items || []).filter(x=> x.id && x.id.videoId).map(x=>({
+        id: x.id.videoId, title: decodeHTML(x.snippet.title), channel: decodeHTML(x.snippet.channelTitle) }));
+      ytCache.set(ck, items);
+      renderResults(box, items);
+    } catch(e){
+      if(my === searchSeq) note(box, 'Lỗi mạng, thử lại sau nhé.');
+    }
+  }
+  // Nhập link/ID -> phát luôn; nhập chữ -> tìm kiếm
+  function submitTv(){
+    const v = $('tvUrl').value.trim();
+    if(!v){ UI.toast('Gõ tên video hoặc dán link YouTube'); return; }
+    // 11 ký tự toàn chữ cái (vd "instrumental") là từ khóa chứ không phải ID video -> tìm kiếm
+    if(parseYT(v) && !/^[a-z]{11}$/i.test(v)){ $('tvResults').innerHTML = ''; playVideo(v); return; }
+    try { localStorage.setItem('gcity_yt', v); } catch(e){}
+    searchVideos(v);
   }
   function stopVideo(){
     videoId = null; frame.src = 'about:blank'; frame.style.visibility = 'hidden';
@@ -223,7 +285,8 @@ const Park = (() => {
     player = p; frame = $('tvFrame');
     frame.style.width = FW + 'px'; frame.style.height = FH + 'px';
     try { $('tvUrl').value = localStorage.getItem('gcity_yt') || ''; } catch(e){}
-    $('tvPlay').onclick = ()=> playVideo($('tvUrl').value);
+    $('tvPlay').onclick = submitTv;
+    $('tvUrl').addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); submitTv(); } });
     $('tvStop').onclick = stopVideo;
   }
 
