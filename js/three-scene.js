@@ -16,6 +16,9 @@ const Scene3D = (() => {
   let camAngle = 0, camPitch = CAM.pitch0, camDist = CAM.dist0;
   const camTarget = new THREE.Vector3(), camPtr = new Map();
   let camSnap = true, camLastT = 0, camLastX = 0, camLastZ = 0;
+  // Độ phân giải thích ứng: bắt đầu ở mật độ điểm ảnh gốc của máy (tối đa 3x), tự hạ khi FPS < 24. Thêm ?res=1.5 vào URL để ép cố định.
+  const RES = { max:Math.min(window.devicePixelRatio||1, 3), min:1, cur:1, n:0, t:0, low:0, warm:true, fixed:false };
+  const maxAniso = () => Math.min(8, renderer.capabilities.getMaxAnisotropy());   // nền gạch không bị nhoè khi nhìn xiên
   let waterMesh = null, fountainParticles = null;
   let screenInfo = null, screenCanvas = null, screenTex = null, spinners = [];
   let ferris = null, racers = [], raceCanvas = null, raceTex = null;
@@ -91,7 +94,9 @@ const Scene3D = (() => {
 
     camera = new THREE.PerspectiveCamera(CAM.fov, window.innerWidth/window.innerHeight, 0.1, 400);
     renderer = new THREE.WebGLRenderer({ antialias:true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));   // nét trên màn retina, chặn ở 2 để giữ FPS
+    const qRes = parseFloat(new URLSearchParams(location.search).get('res'));
+    if(qRes > 0){ RES.max = camClamp(qRes, 0.5, 3); RES.fixed = true; }
+    RES.cur = RES.max; renderer.setPixelRatio(RES.cur);
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -146,7 +151,7 @@ const Scene3D = (() => {
     g.fillStyle='#'+color1.toString(16).padStart(6,'0'); g.fillRect(0,0,256,256);
     g.fillStyle='#'+color2.toString(16).padStart(6,'0');
     for(let i=0;i<256;i+=32){ for(let j=0;j<256;j+=32){ if((i+j)%64===0) g.fillRect(i,j,32,32); } }
-    const tex = new THREE.CanvasTexture(c); tex.wrapS=tex.wrapT=THREE.RepeatWrapping; tex.repeat.set(8,8);
+    const tex = new THREE.CanvasTexture(c); tex.wrapS=tex.wrapT=THREE.RepeatWrapping; tex.repeat.set(8,8); tex.anisotropy=maxAniso();
     return tex;
   }
 
@@ -154,7 +159,7 @@ const Scene3D = (() => {
     const c=document.createElement('canvas'); c.width=c.height=128; const g=c.getContext('2d');
     g.fillStyle=c1; g.fillRect(0,0,128,128); g.fillStyle=c2; g.fillRect(0,0,64,64); g.fillRect(64,64,64,64);
     g.strokeStyle='rgba(120,70,40,.18)'; g.lineWidth=2; g.strokeRect(0,0,128,128);
-    const t=new THREE.CanvasTexture(c); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(rx,ry); return t;
+    const t=new THREE.CanvasTexture(c); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(rx,ry); t.anisotropy=maxAniso(); return t;
   }
   function makeTree(x,z,s,base=true){
     const t=new THREE.Group(), lm=c=>new THREE.MeshLambertMaterial({color:c,flatShading:true});
@@ -323,7 +328,7 @@ const Scene3D = (() => {
       const ring = new THREE.Mesh(new THREE.BoxGeometry(p.w, 0.1, p.d), new THREE.MeshBasicMaterial({color:0xffd700, transparent:true, opacity:0.5}));
       ring.position.set(p.x, 0.1, p.z); worldGroup.add(ring);
       const sign = makeTextSprite(p.label, {fontsize:28, color:'#fff', bg:'rgba(255,180,0,.8)'});
-      sign.position.set(p.x, 2, p.z); sign.scale.set(7,1.8,1); worldGroup.add(sign);
+      sign.position.set(p.x, 3, p.z); sign.scale.set(0.8*sign.userData.ar, 0.8, 1); worldGroup.add(sign);
     }
 
     // màn hình lớn (công viên)
@@ -345,7 +350,7 @@ const Scene3D = (() => {
       const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.6), new THREE.MeshLambertMaterial({color:gm.color, emissive:gm.color, emissiveIntensity:0.5}));
       gem.position.set(gm.x, 2, gm.z); worldGroup.add(gem); spinners.push(gem);
       const lb = makeTextSprite(gm.icon+' '+gm.name, {fontsize:30, color:'#fff', bg:'rgba(0,0,0,.7)'});
-      lb.position.set(gm.x, 3.2, gm.z); lb.scale.set(5,1.2,1); worldGroup.add(lb);
+      lb.position.set(gm.x, 3.7, gm.z); lb.scale.set(0.6*lb.userData.ar, 0.6, 1); worldGroup.add(lb);
     });
 
     scene.add(worldGroup);
@@ -355,20 +360,22 @@ const Scene3D = (() => {
   // ===== TEXT SPRITE (name + chat) =====
   function makeTextSprite(text, opts={}){
     const { fontsize=24, color='#fff', bg='rgba(0,0,0,.6)' } = opts;
+    const SS = 3;   // vẽ gấp 3 lần rồi thu nhỏ → chữ nét trên màn retina và khi camera zoom gần
     const c = document.createElement('canvas');
     const g = c.getContext('2d');
     g.font = `bold ${fontsize}px sans-serif`;
-    const w = g.measureText(text).width + 20;
-    c.width = w; c.height = fontsize + 16;
+    const lw = Math.ceil(g.measureText(text).width + 20), lh = fontsize + 16;
+    c.width = lw*SS; c.height = lh*SS;
     const g2 = c.getContext('2d');
+    g2.scale(SS, SS);
     g2.fillStyle = bg;
-    roundRect2(g2, 0, 0, c.width, c.height, 8); g2.fill();
+    roundRect2(g2, 0, 0, lw, lh, 8); g2.fill();
     g2.font = `bold ${fontsize}px sans-serif`; g2.fillStyle = color; g2.textAlign='center'; g2.textBaseline='middle';
-    if(/,0\)$/.test(bg)){ g2.lineWidth=6; g2.lineJoin='round'; g2.strokeStyle='rgba(20,30,40,.7)'; g2.strokeText(text, c.width/2, c.height/2); }
-    g2.fillText(text, c.width/2, c.height/2);
+    if(/,0\)$/.test(bg)){ g2.lineWidth=6; g2.lineJoin='round'; g2.strokeStyle='rgba(20,30,40,.7)'; g2.strokeText(text, lw/2, lh/2); }
+    g2.fillText(text, lw/2, lh/2);
     const tex = new THREE.CanvasTexture(c);
     const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map:tex, transparent:true, depthTest:false }));
-    spr.userData.ar = c.width/c.height; return spr;
+    spr.userData.ar = lw/lh; return spr;
   }
   function roundRect2(g,x,y,w,h,r){ g.beginPath(); g.moveTo(x+r,y); g.arcTo(x+w,y,x+w,y+h,r); g.arcTo(x+w,y+h,x,y+h,r); g.arcTo(x,y+h,x,y,r); g.arcTo(x,y,x+w,y,r); g.closePath(); }
 
@@ -611,6 +618,18 @@ const Scene3D = (() => {
 
   // ===== RENDER LOOP =====
   function render(time){
+    if(!RES.fixed){   // chỉ hạ, không tăng lại → không bị giật qua lại giữa 2 mức
+      const now = performance.now();
+      if(document.hidden){ RES.t = 0; RES.n = 0; }
+      else if(!RES.t){ RES.t = now; RES.n = 0; }
+      else if(++RES.n && now-RES.t >= 1500){
+        const fps = RES.n*1000/(now-RES.t); RES.t = now; RES.n = 0;
+        if(RES.warm) RES.warm = false;                      // bỏ qua cửa sổ đầu (biên dịch shader)
+        else if(fps < 24 && RES.cur > RES.min){
+          if(++RES.low >= 2){ RES.low = 0; RES.cur = Math.max(RES.min, RES.cur-0.5); renderer.setPixelRatio(RES.cur); renderer.setSize(window.innerWidth, window.innerHeight); }
+        } else RES.low = 0;
+      }
+    }
     spinners.forEach(m=>{ m.rotation.y = time*1.5; });
     if(ferris){ ferris.rot.rotation.z = time*0.2; ferris.gond.forEach(g=>g.rotation.z = -time*0.2); }
     // fountain particles
@@ -640,5 +659,5 @@ const Scene3D = (() => {
 
   return { init, buildZone, createCharacter, setChatBubble, updateCharacter,
     updateCamera, getMoveDir, collides, atPortal, nearBuilding, atDock, render, nearSpot, setScreenText, screenCorners2D, setRacers, setRaceBoard,
-    getZone, CHAR_DEFS, get scene(){return scene;}, get camera(){return camera;} };
+    getZone, CHAR_DEFS, get scene(){return scene;}, get camera(){return camera;}, get pixelRatio(){return RES.cur;} };
 })();
