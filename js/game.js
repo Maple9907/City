@@ -131,10 +131,11 @@
       Scene3D.scene.remove(old); Scene3D.scene.add(nm); playerMesh = nm; UI.toast('Đã đổi nhân vật');
     };
     $('btnRun').onclick = ()=>{ input.run = !input.run; $('btnRun').classList.toggle('on', input.run); };
+    $('btnCam').addEventListener('click', ()=> UI.toast('🎥 ' + Scene3D.setCamView()));
     Park.init(player);
     UI.updateHUD(player);
     UI.renderPlayers(Net.getPlayers());
-    UI.addChat('Hệ thống', `Chào mừng ${player.name} đến GCITY 3D! WASD di chuyển, kéo màn hình để xoay/nghiêng camera, lăn chuột hoặc chụm 2 ngón để zoom, E để ngồi ghế / chơi mini game / mở màn hình TV.`, true);
+    UI.addChat('Hệ thống', `Chào mừng ${player.name} đến GCITY 3D! WASD di chuyển, vuốt/kéo chuột (hoặc phím Q/R) để xoay & nghiêng camera, chụm 2 ngón/lăn chuột để thu phóng, nút 🎥 đổi góc nhìn, E để ngồi ghế / chơi mini game / mở màn hình TV.`, true);
 
     setTimeout(()=> $('loadingScreen').classList.add('hidden'), 500);
     requestAnimationFrame(loop);
@@ -280,7 +281,6 @@
 
       // action timer (auto-clear non-sit)
       if(playerMesh.userData.action && playerMesh.userData.action!=='sit'){
-        playerMesh.userData.actionT += dt;
         const dur = playerMesh.userData.action==='jump'?0.8 : (playerMesh.userData.action==='wave'?2.5 : (playerMesh.userData.action==='cry'?3 : (playerMesh.userData.action==='holla'?2 : 4)));
         if(playerMesh.userData.actionT > dur){ playerMesh.userData.action=null; player.action=null; }
       }

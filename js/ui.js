@@ -16,6 +16,16 @@ const UI = (() => {
   function hideLoading(){ $('loadingScreen').classList.add('hidden'); }
 
   // ---- Character Select ----
+  // Ảnh xem trước 3D (GChar.preview) - cache Image để bấm đổi thẻ không bị nháy
+  const previewImgs = {};
+  function drawPreview3D(ctx, gender, i){
+    if(typeof GChar === 'undefined') return false;
+    const key = gender + i; let im = previewImgs[key];
+    if(!im){ const url = GChar.preview(gender, i, 132, 165); if(!url) return false; im = new Image(); im.src = url; previewImgs[key] = im; }
+    if(im.complete) ctx.drawImage(im, 0, 0); else im.onload = ()=> ctx.drawImage(im, 0, 0);
+    return true;
+  }
+
   function renderCharGrid(){
     const grid = $('charGrid'); grid.innerHTML = '';
     const chars = (typeof Scene3D!=='undefined'? Scene3D.CHAR_DEFS : {male:[],female:[]})[selectedGender];
@@ -23,17 +33,20 @@ const UI = (() => {
       const card = document.createElement('div');
       card.className = 'char-card' + (i===selectedChar?' selected':'');
       const cv = document.createElement('canvas');
-      cv.width = 64; cv.height = 80;
+      cv.width = 132; cv.height = 165;
       const ctx = cv.getContext('2d');
-      // preview đơn giản: đầu + thân theo màu nhân vật
-      ctx.fillStyle='#'+def.skin.toString(16).padStart(6,'0');
-      ctx.beginPath(); ctx.arc(32,26,11,0,Math.PI*2); ctx.fill();
-      ctx.fillStyle='#'+def.hair.toString(16).padStart(6,'0');
-      ctx.beginPath(); ctx.arc(32,22,11,Math.PI,0); ctx.fill();
-      ctx.fillStyle='#'+def.shirt.toString(16).padStart(6,'0');
-      ctx.fillRect(22,36,20,22);
-      ctx.fillStyle='#'+def.pants.toString(16).padStart(6,'0');
-      ctx.fillRect(23,58,8,18); ctx.fillRect(33,58,8,18);
+      if(!drawPreview3D(ctx, selectedGender, i)){
+        // fallback 2D khi trình duyệt không có WebGL: đầu + thân theo màu nhân vật
+        ctx.scale(2.06, 2.06);
+        ctx.fillStyle='#'+def.skin.toString(16).padStart(6,'0');
+        ctx.beginPath(); ctx.arc(32,26,11,0,Math.PI*2); ctx.fill();
+        ctx.fillStyle='#'+def.hair.toString(16).padStart(6,'0');
+        ctx.beginPath(); ctx.arc(32,22,11,Math.PI,0); ctx.fill();
+        ctx.fillStyle='#'+def.shirt.toString(16).padStart(6,'0');
+        ctx.fillRect(22,36,20,22);
+        ctx.fillStyle='#'+def.pants.toString(16).padStart(6,'0');
+        ctx.fillRect(23,58,8,18); ctx.fillRect(33,58,8,18);
+      }
       card.appendChild(cv);
       const lbl = document.createElement('div');
       lbl.className='char-label';

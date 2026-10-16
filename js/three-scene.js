@@ -7,42 +7,16 @@ const Scene3D = (() => {
   let container;
   let worldGroup;      // group chứa zone hiện tại
   let characters = {}; // id -> {group, parts, action, actionT}
-  // Camera third-person kiểu "Quảng trường Mini": xoay (yaw) + nghiêng (pitch) + zoom (dist) quanh nhân vật
-  const CAM = { fov:55, lookY:1.5, pitch0:0.5, dist0:13, minPitch:0.1, maxPitch:1.5,
-                minDist:5, maxDist:120,   // maxDist bị chặn bởi sương mù (Fog 110→260)
-                rotX:0.006, rotY:0.005, follow:0.2 };
-  const camClamp = (v,a,b)=>Math.max(a,Math.min(b,v));
-  const setCamDist = d => { camDist = camClamp(d, CAM.minDist, CAM.maxDist); };
-  let camAngle = 0, camPitch = CAM.pitch0, camDist = CAM.dist0;
-  const camTarget = new THREE.Vector3(), camPtr = new Map();
-  let camSnap = true, camLastT = 0, camLastX = 0, camLastZ = 0;
-  // Độ phân giải thích ứng: bắt đầu ở mật độ điểm ảnh gốc của máy (tối đa 3x), tự hạ khi FPS < 24. Thêm ?res=1.5 vào URL để ép cố định.
-  const RES = { max:Math.min(window.devicePixelRatio||1, 3), min:1, cur:1, n:0, t:0, low:0, warm:true, fixed:false };
-  const maxAniso = () => Math.min(8, renderer.capabilities.getMaxAnisotropy());   // nền gạch không bị nhoè khi nhìn xiên
+  let camAngle = 0, camDist = 22.7, camPitch = 0.85, camTween = null, camView = 1;
+  let camOcc = [], gameLabels = [], camLimit = 54, camFollow = null, camCurS = 1, camLast = 0;   // camera: vật cản, bán kính giới hạn, làm mượt
+  const camKeys = {};
+  let mouseDown = false, lastMX = 0;
   let waterMesh = null, fountainParticles = null;
   let screenInfo = null, screenCanvas = null, screenTex = null, spinners = [];
   let ferris = null, racers = [], raceCanvas = null, raceTex = null;
 
-  // 6 nam + 6 nữ: màu skin, tóc, áo, quần, kiểu tóc
-  const CHAR_DEFS = {
-    male: [
-      { skin:0xf5c9a0, hair:0x6b3f2a, shirt:0xffffff, pants:0x151515, hairStyle:'short' },
-      { skin:0xf5c9a0, hair:0x2a1a0f, shirt:0x3b82f6, pants:0x1e3a5f, hairStyle:'short' },
-      { skin:0xe8b88f, hair:0x0f0f0f, shirt:0xef4444, pants:0x2d2d2d, hairStyle:'spiky' },
-      { skin:0xf0c090, hair:0x6b4423, shirt:0x10b981, pants:0x374151, hairStyle:'curly' },
-      { skin:0xf5d0a8, hair:0xd4a017, shirt:0x8b5cf6, pants:0x4c1d95, hairStyle:'short' },
-      { skin:0xe0a878, hair:0x1a1a1a, shirt:0xf59e0b, pants:0x78350f, hairStyle:'spiky' },
-      { skin:0xf8d8b8, hair:0x8b4513, shirt:0xec4899, pants:0x831843, hairStyle:'curly' },
-    ],
-    female: [
-      { skin:0xf8d4b0, hair:0x1a1a1a, shirt:0xec4899, pants:0xbe185d, hairStyle:'long', skirt:true },
-      { skin:0xf0c090, hair:0x8b4513, shirt:0xf59e0b, pants:0x92400e, hairStyle:'ponytail', skirt:true },
-      { skin:0xfce0c0, hair:0xf5d060, shirt:0x06b6d4, pants:0x155e75, hairStyle:'twin', skirt:true },
-      { skin:0xe8b88f, hair:0x2d1b0e, shirt:0xa855f7, pants:0x6b21a8, hairStyle:'long', skirt:false },
-      { skin:0xf5c9a0, hair:0xc0392b, shirt:0x22c55e, pants:0x14532d, hairStyle:'ponytail', skirt:true },
-      { skin:0xf8d8b8, hair:0x4a3728, shirt:0xf43f5e, pants:0x9f1239, hairStyle:'twin', skirt:true },
-    ]
-  };
+  // Dữ liệu nhân vật (7 nam + 6 nữ) nằm trong js/character.js
+  const CHAR_DEFS = GChar.DEFS;
 
   const ZONES = {
     plaza: { size:60, buildings:[
@@ -84,8 +58,7 @@ const Scene3D = (() => {
     ]
   });
   [[-7,-7],[7,-7],[-7,7],[7,7]].forEach(([bx,bz])=>ZONES.plaza.benches.push({x:bx, z:bz, ry:Math.atan2(-bx,-bz)}));
-  [-9,-4.5,4.5,9].forEach(bx=>ZONES.plaza.benches.push({x:bx, z:-29, ry:Math.PI})); // ghế hàng 1 hướng về màn hình
-  [-9,-4.5,4.5,9].forEach(bx=>ZONES.plaza.benches.push({x:bx, z:-26.5, ry:Math.PI})); // ghế hàng 2
+  [-9,-4.5,4.5,9].forEach(bx=>ZONES.plaza.benches.push({x:bx, z:-32.5, ry:Math.PI})); // ghế trên sân khấu, hướng về màn hình
 
   function init(cont){
     container = cont;
@@ -93,11 +66,8 @@ const Scene3D = (() => {
     scene.background = new THREE.Color(0xbfe9f4);
     scene.fog = new THREE.Fog(0xbfe9f4, 110, 260);
 
-    camera = new THREE.PerspectiveCamera(CAM.fov, window.innerWidth/window.innerHeight, 0.1, 400);
+    camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 400);
     renderer = new THREE.WebGLRenderer({ antialias:true });
-    const qRes = parseFloat(new URLSearchParams(location.search).get('res'));
-    if(qRes > 0){ RES.max = camClamp(qRes, 0.5, 3); RES.fixed = true; }
-    RES.cur = RES.max; renderer.setPixelRatio(RES.cur);
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -112,32 +82,24 @@ const Scene3D = (() => {
     sun.shadow.camera.top=60; sun.shadow.camera.bottom=-60; sun.shadow.camera.far=200;
     scene.add(sun);
 
-    // camera orbit: kéo 1 ngón/chuột = xoay + nghiêng; lăn chuột / chụm 2 ngón = zoom
-    const cv = renderer.domElement;
-    cv.style.touchAction = 'none';   // chặn trình duyệt cuộn/zoom trang khi kéo trên canvas
-    cv.addEventListener('pointerdown', e=>{
-      if(e.pointerType==='mouse') camPtr.clear();
-      try{ cv.setPointerCapture(e.pointerId); }catch(_){}
-      camPtr.set(e.pointerId, [e.clientX, e.clientY]);
+    // camera: 1 ngón/chuột kéo = xoay trái-phải + nghiêng lên-xuống; 2 ngón chụm / lăn chuột = thu phóng
+    const el = renderer.domElement, ptr = new Map(); let pinch = 0;
+    el.style.touchAction = 'none';
+    const clampCam = ()=>{ camPitch = Math.max(0.1, Math.min(1.45, camPitch)); camDist = Math.max(5, Math.min(110, camDist)); };
+    el.addEventListener('pointerdown', e=>{
+      ptr.set(e.pointerId, {x:e.clientX, y:e.clientY}); try{ el.setPointerCapture(e.pointerId); }catch(_){} camTween = null;
+      if(ptr.size===2){ const [a,b] = [...ptr.values()]; pinch = Math.hypot(a.x-b.x, a.y-b.y); }
     });
-    cv.addEventListener('pointermove', e=>{
-      const p = camPtr.get(e.pointerId); if(!p) return;
-      if(camPtr.size===1){
-        camAngle -= (e.clientX-p[0])*CAM.rotX;
-        camPitch = camClamp(camPitch + (e.clientY-p[1])*CAM.rotY, CAM.minPitch, CAM.maxPitch);
-      } else if(camPtr.size===2){
-        const o = [...camPtr.entries()].find(q=>q[0]!==e.pointerId)[1];
-        const d0 = Math.hypot(p[0]-o[0], p[1]-o[1]), d1 = Math.hypot(e.clientX-o[0], e.clientY-o[1]);
-        if(d1>1) setCamDist(camDist*d0/d1);
-      }
-      p[0]=e.clientX; p[1]=e.clientY;
+    el.addEventListener('pointermove', e=>{
+      const p = ptr.get(e.pointerId); if(!p) return;
+      const dx = e.clientX-p.x, dy = e.clientY-p.y; p.x = e.clientX; p.y = e.clientY;
+      if(ptr.size===1){ camAngle -= dx*0.006; camPitch += dy*0.005; }
+      else if(ptr.size===2){ const [a,b] = [...ptr.values()], d = Math.hypot(a.x-b.x, a.y-b.y); if(pinch>0 && d>0) camDist *= pinch/d; pinch = d; }
+      clampCam();
     });
-    const camPtrEnd = e=>{ camPtr.delete(e.pointerId); };
-    cv.addEventListener('pointerup', camPtrEnd);
-    cv.addEventListener('pointercancel', camPtrEnd);
-    cv.addEventListener('lostpointercapture', camPtrEnd);
-    window.addEventListener('blur', ()=> camPtr.clear());   // tránh kẹt trạng thái "đang kéo" khi mất focus
-    cv.addEventListener('wheel', e=>{ setCamDist(camDist*(1+(e.deltaMode===1? e.deltaY*33 : e.deltaY)*0.001)); }, {passive:true});
+    const up = e=>{ ptr.delete(e.pointerId); pinch = 0; };
+    el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
+    el.addEventListener('wheel', e=>{ camDist *= Math.exp(e.deltaY*0.0012); camTween = null; clampCam(); }, {passive:true});
     window.addEventListener('resize', ()=>{
       camera.aspect = window.innerWidth/window.innerHeight; camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
@@ -152,7 +114,7 @@ const Scene3D = (() => {
     g.fillStyle='#'+color1.toString(16).padStart(6,'0'); g.fillRect(0,0,256,256);
     g.fillStyle='#'+color2.toString(16).padStart(6,'0');
     for(let i=0;i<256;i+=32){ for(let j=0;j<256;j+=32){ if((i+j)%64===0) g.fillRect(i,j,32,32); } }
-    const tex = new THREE.CanvasTexture(c); tex.wrapS=tex.wrapT=THREE.RepeatWrapping; tex.repeat.set(8,8); tex.anisotropy=maxAniso();
+    const tex = new THREE.CanvasTexture(c); tex.wrapS=tex.wrapT=THREE.RepeatWrapping; tex.repeat.set(8,8);
     return tex;
   }
 
@@ -160,51 +122,38 @@ const Scene3D = (() => {
     const c=document.createElement('canvas'); c.width=c.height=128; const g=c.getContext('2d');
     g.fillStyle=c1; g.fillRect(0,0,128,128); g.fillStyle=c2; g.fillRect(0,0,64,64); g.fillRect(64,64,64,64);
     g.strokeStyle='rgba(120,70,40,.18)'; g.lineWidth=2; g.strokeRect(0,0,128,128);
-    const t=new THREE.CanvasTexture(c); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(rx,ry); t.anisotropy=maxAniso(); return t;
+    const t=new THREE.CanvasTexture(c); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(rx,ry); return t;
+  }
+  // Đăng ký vật cản cho camera: 'box' (tòa nhà) hoặc 'cyl' (cây, đồi, đài phun). Gom vật liệu để làm mờ khi che nhân vật.
+  function regOcc(type, vol, obj){
+    const mats = [];
+    obj.traverse(o=>{ if(o.material && !o.isSprite && mats.indexOf(o.material)<0){ const m=o.material; if(m.userData.o0===undefined){ m.userData.o0=m.opacity; m.userData.t0=m.transparent; } mats.push(m); } });
+    camOcc.push(Object.assign({type, mats, op:1, want:1, applied:1}, vol));
   }
   function makeTree(x,z,s,base=true){
-    const t=new THREE.Group(), lm=c=>new THREE.MeshLambertMaterial({color:c});
-    if(base){ // bệ tròn đất nâu + viền vữa xám (như mẫu)
-      const pad=new THREE.Mesh(new THREE.CylinderGeometry(1.6,1.7,0.18,20),lm(0x9a7a55)); pad.position.y=0.09; pad.receiveShadow=true; t.add(pad);
-      const curb=new THREE.Mesh(new THREE.TorusGeometry(1.65,0.09,6,24),lm(0xb8bcc2)); curb.rotation.x=Math.PI/2; curb.position.y=0.18; t.add(curb);
-    }
-    const tr=new THREE.Mesh(new THREE.CylinderGeometry(0.22,0.32,2.4,7),lm(0x8a5a35)); tr.position.y=1.35; tr.castShadow=true; t.add(tr);
-    // tán tròn: 1 quả cầu to + 2 quả nhỏ bên
-    [[0,3.4,0,1.25,0x4a9e4f],[0.7,3.0,0.3,0.85,0x57b05c],[-0.6,3.1,-0.4,0.8,0x3f9248]].forEach(([a,b2,c,r,col])=>{ const l=new THREE.Mesh(new THREE.SphereGeometry(r,10,8),lm(col)); l.position.set(a,b2,c); l.castShadow=true; t.add(l); });
+    const t=new THREE.Group(), lm=c=>new THREE.MeshLambertMaterial({color:c,flatShading:true});
+    if(base){ const b=new THREE.Mesh(new THREE.CylinderGeometry(1.5,1.6,0.12,16),lm(0x8a5a3a)); b.position.y=0.07; t.add(b); }
+    const tr=new THREE.Mesh(new THREE.CylinderGeometry(0.25,0.35,2.2,6),lm(0x6b4423)); tr.position.y=1.1; tr.castShadow=true; t.add(tr);
+    [[0,3.1,0,1.5,0x3f9d4a],[0.5,3.9,0.2,1.1,0x57b85c],[-0.5,3.6,-0.3,1.0,0x4aa954]].forEach(([a,b2,c,r,col])=>{ const l=new THREE.Mesh(new THREE.IcosahedronGeometry(r,1),lm(col)); l.position.set(a,b2,c); l.castShadow=true; t.add(l); });
     t.scale.setScalar(s); t.position.set(x,0,z); worldGroup.add(t);
+    regOcc('cyl', {x:x, z:z, r:1.7*s, h:5.2*s}, t);
   }
   function buildPlazaFloor(){
     const L=c=>new THREE.MeshLambertMaterial(typeof c==='object'?c:{color:c});
     const flat=(w,d,x,y,zz,m)=>{ const o=new THREE.Mesh(new THREE.PlaneGeometry(w,d),m); o.rotation.x=-Math.PI/2; o.position.set(x,y,zz); o.receiveShadow=true; worldGroup.add(o); };
     const bx=(w,h,d,x,y,zz,m)=>{ const o=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m); o.position.set(x,y,zz); o.castShadow=o.receiveShadow=true; worldGroup.add(o); };
     const isl=new THREE.Mesh(new THREE.CylinderGeometry(56,56,1,64),L(0x9fd69a)); isl.position.y=-0.5; isl.receiveShadow=true; worldGroup.add(isl);
-    [[-44,-30],[47,32],[-40,34]].forEach(([x,zz])=>{ const h=new THREE.Mesh(new THREE.SphereGeometry(10,14,8),L(0xb6e3a8)); h.scale.y=0.45; h.position.set(x,0,zz); worldGroup.add(h); });
-    // ===== PLAZA: gạch be (theo mẫu Gaubong) =====
-    flat(60,60,0,0.02,0,L({map:tileTex('#f2dcb5','#e6cfa2',24,24)}));
-    // vỉa hè xám nhạt dọc 2 bên mỗi làn đường
-    const sideW=L(0xc9ccd1);
-    [-18.5,18.5].forEach(zc=>{ flat(44,2.6,0,0.045,zc-3.8,sideW); flat(44,2.6,0,0.045,zc+3.8,sideW); });
-    [-18.5,18.5].forEach(xc=>{ flat(2.6,34,xc-3.8,0.045,0,sideW); flat(2.6,34,xc+3.8,0.045,0,sideW); });
-    // ===== ĐƯỜNG: nhựa đen =====
-    const road=L(0x262930); flat(44,5,0,0.06,-18.5,road); flat(44,5,0,0.06,18.5,road); flat(5,34,-18.5,0.06,0,road); flat(5,34,18.5,0.06,0,road);
-    // ===== THẬP ĐÁ ĐỎ (terracotta): chữ thập + vòng tròn quanh đài phun + viền gạch =====
-    const cr=()=>({map:tileTex('#d18a68','#c47d5c',8,3)});
-    flat(34,6,0,0.09,0,L(cr())); flat(6,34,0,0.09,0,L(cr()));
-    const cm=new THREE.Mesh(new THREE.CircleGeometry(11,48),L({map:tileTex('#c97d5c','#bd7050',10,10)})); cm.rotation.x=-Math.PI/2; cm.position.y=0.13; cm.receiveShadow=true; worldGroup.add(cm);
-    const brick=L(0xa85a3c);
-    for(let i=0;i<36;i++){ const a=i/36*Math.PI*2; bx(0.9,0.2,0.55, Math.cos(a)*11.7, 0.13, Math.sin(a)*11.7, brick); }
-    // ===== VẠCH KẺ ĐƯỜNG THEO MẪU: vàng giữa đứt + sơn ngựa SONG SONG với đường, KHÔNG vạch mép trắng =====
-    const yellow=L(0xf5c518), white=L(0xf7f7f2);
-    const dashL=1.6, dashW=0.22, dashGap=4.5;
-    [-18.5,18.5].forEach(zc=>{ for(let x=-21;x<=21;x+=dashL+dashGap) flat(dashL,dashW,x,0.105,zc,yellow); });
-    [-18.5,18.5].forEach(xc=>{ for(let z=-16;z<=16;z+=dashL+dashGap) flat(dashW,dashL,xc,0.105,z,yellow); });
-    // vạch sơn ngựa: mỗi sọc DÀI theo chiều xe chạy, xếp dày theo chiều người đi bộ
-    [-18.5,18.5].forEach(zc=>{ for(let z=zc-2.1;z<=zc+2.1;z+=0.85) flat(5.5,0.45,0,0.11,z,white); });
-    [-18.5,18.5].forEach(xc=>{ for(let x=xc-2.1;x<=xc+2.1;x+=0.85) flat(0.45,5.5,x,0.11,0,white); });
-    // ===== SÂN KHẤU trước màn hình: sàn gỗ + mặt trước xanh lá + bậc thang giữa =====
-    const wood=L(0xc99a6b), stageGreen=L(0x3f7a4a);
-    bx(22,0.5,7,0,0.25,-35,wood); bx(22,0.5,0.4,0,0.25,-31.6,stageGreen);
-    for(let s=0;s<3;s++){ bx(5,0.15*(3-s),1.0,0,0.075*(3-s),-31.0+s*1.0,wood); }
+    [[-44,-30],[47,32],[-40,34]].forEach(([x,zz])=>{ const h=new THREE.Mesh(new THREE.SphereGeometry(10,14,8),L(0xb6e3a8)); h.scale.y=0.45; h.position.set(x,0,zz); worldGroup.add(h); regOcc('cyl', {x:x, z:zz, r:9.3, h:4.4}, h); });
+    flat(62,62,0,0.02,0,L({map:tileTex('#d3d8dc','#c4cad0',31,31)}));
+    flat(32,32,0,0.06,0,L({map:tileTex('#f7d9ac','#f0cc9c',16,16)}));
+    const road=L(0x3a3f47); flat(42,5,0,0.06,-18.5,road); flat(42,5,0,0.06,18.5,road); flat(5,32,-18.5,0.06,0,road); flat(5,32,18.5,0.06,0,road);
+    const cr=()=>({map:tileTex('#d9967c','#cf8a70',16,2)}); flat(32,4,0,0.1,0,L(cr())); flat(4,32,0,0.1,0,L({map:tileTex('#d9967c','#cf8a70',2,16)}));
+    const cm=new THREE.Mesh(new THREE.CircleGeometry(8,48),L({map:tileTex('#cf8a70','#c47d64',8,8)})); cm.rotation.x=-Math.PI/2; cm.position.y=0.14; cm.receiveShadow=true; worldGroup.add(cm);
+    const rg=new THREE.Mesh(new THREE.RingGeometry(8,8.4,48),L(0xb26a50)); rg.rotation.x=-Math.PI/2; rg.position.y=0.16; worldGroup.add(rg);
+    const dm=L(0xe8c86a), wm=L(0xf4f1e6);
+    for(let t=-19;t<=19;t+=3.5){ flat(1.6,0.2,t,0.1,-18.5,dm); flat(1.6,0.2,t,0.1,18.5,dm); flat(0.2,1.6,-18.5,0.1,t*0.78,dm); flat(0.2,1.6,18.5,0.1,t*0.78,dm); }
+    for(let k=-2.5;k<=2.5;k+=1){ flat(0.55,4,k,0.11,-18.5,wm); flat(0.55,4,k,0.11,18.5,wm); flat(4,0.55,-18.5,0.11,k,wm); flat(4,0.55,18.5,0.11,k,wm); }
+    const wood=L(0xc99a6b); bx(22,0.3,8,0,0.15,-35,wood); bx(5,0.15,1.2,0,0.075,-30.4,wood);
     [-10.5,10.5].forEach(sx=>bx(1.1,2.4,1,sx,1.5,-36,L(0x1b1f27)));
     (ZONES.plaza.flowers||[]).forEach(f=>{ bx(3,0.5,1.2,f.x,0.3,f.z,L(0xe6d3b0));
       for(let i=-1;i<=1;i++) for(let j=0;j<2;j++){ const fl=new THREE.Mesh(new THREE.SphereGeometry(0.22,6,5),L(i%2?0xf06a8d:0xff8fa8)); fl.position.set(f.x+i*0.9,0.65,f.z+(j-0.5)*0.5); worldGroup.add(fl); } });
@@ -258,6 +207,7 @@ const Scene3D = (() => {
     if(worldGroup){ scene.remove(worldGroup); }
     worldGroup = new THREE.Group();
     const z = ZONES[zoneId];
+    camOcc = []; gameLabels = []; camFollow = null; camCurS = 1;
     waterMesh = null; fountainParticles = null; screenInfo = null; screenCanvas = null; spinners = []; ferris = null; racers = []; raceCanvas = null;
 
     // ground
@@ -278,37 +228,21 @@ const Scene3D = (() => {
     }
 
     // buildings (low-poly nhiều tầng, mặt tiền quay theo ry)
-    z.buildings.forEach((b,bi)=>{
+    z.buildings.forEach(b=>{
       const g=new THREE.Group(), sw=Math.abs(Math.sin(b.ry||0))>.5, lw=sw?b.d:b.w, ld=sw?b.w:b.d;
-      const add=(w,h,d,x,y,zz,m)=>{ const mesh=new THREE.Mesh(new THREE.BoxGeometry(w,h,d), m instanceof THREE.Material? m : new THREE.MeshLambertMaterial({color:m})); mesh.position.set(x,y,zz); mesh.castShadow=true; mesh.receiveShadow=true; g.add(mesh); return mesh; };
-      const cream=0xf0e0b8, glass=0x8fc8d8, wallC=b.color, darkC=b.roof;
-      // móng kem + thân tường pastel
-      add(lw+0.4,0.4,ld+0.4,0,0.2,0,0xd8c8a8);
-      add(lw,b.h,ld,0,b.h/2+0.4,0,wallC);
-      // dải sàn liên tầng + mái parapet + ống khói
-      const fl=Math.max(2,Math.round(b.h/3)), fh=b.h/fl;
-      for(let f=1;f<fl;f++) add(lw+0.15,0.25,ld+0.15,0,f*fh+0.4,0,cream);
-      add(lw+0.5,0.5,ld+0.5,0,b.h+0.65,0,darkC);
-      add(0.7,1.0,0.7,lw*0.3,b.h+1.4,ld*0.25,darkC);
-      // cửa sổ các tầng trên (mặt tiền + 2 bên): khung kem + kính xanh
-      const nWin=Math.max(3,Math.floor(lw/2.4)), wsp=lw/nWin;
-      const mcol=Math.max(2,Math.floor(ld/2.6)), spz=ld/mcol;
-      for(let f=1;f<fl;f++){ const wy=fh*f+fh*0.5+0.4;
-        for(let i=0;i<nWin;i++){ const x=-lw/2+wsp*(i+.5);
-          add(1.25,1.45,0.1,x,wy,ld/2+0.03,cream); add(1.0,1.2,0.12,x,wy,ld/2+0.06,glass); }
-        for(let j=0;j<mcol;j++){ const zz=-ld/2+spz*(j+.5);
-          add(0.1,1.45,1.25, lw/2+0.03,wy,zz,cream); add(0.12,1.2,1.0, lw/2+0.06,wy,zz,glass);
-          add(0.1,1.45,1.25,-lw/2-0.03,wy,zz,cream); add(0.12,1.2,1.0,-lw/2-0.06,wy,zz,glass); }
+      const add=(w,h,d,x,y,zz,c,cast)=>{ const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),new THREE.MeshLambertMaterial({color:c})); m.position.set(x,y,zz); m.castShadow=!!cast; m.receiveShadow=true; g.add(m); };
+      add(lw,b.h,ld,0,b.h/2,0,b.color,true); add(lw+0.6,0.5,ld+0.6,0,b.h+0.25,0,b.roof,true);
+      const fl=Math.max(1,Math.round(b.h/3)), fh=b.h/fl, n=Math.max(2,Math.floor(lw/2.6)), sp=lw/n;
+      for(let f=0;f<fl;f++){
+        if(f>0) add(lw+0.3,0.18,ld+0.3,0,f*fh,0,0xf3e3b8);
+        for(let i=0;i<n;i++){ const x=-lw/2+sp*(i+.5); if(f===0&&Math.abs(x)<1.4) continue;
+          add(1.3,1.3,0.12,x,f*fh+fh*0.55,ld/2+0.03,0xf3e3b8); add(1.05,1.05,0.14,x,f*fh+fh*0.55,ld/2+0.05,0x58b8c0); }
       }
-      // tầng trệt shop: kính lớn + cửa giữa + awning sọc + biển hiệu
-      const nG=Math.max(2,Math.floor(lw/3));
-      for(let i=0;i<nG;i++){ const x=-lw/2+(i+.5)*(lw/nG); if(Math.abs(x)<0.9) continue;
-        add(1.6,2.2,0.1,x,1.5,ld/2+0.03,cream); add(1.35,1.95,0.12,x,1.5,ld/2+0.06,glass); }
-      add(1.4,2.4,0.12,0,1.4,ld/2+0.06,0x3b2a22);
-      for(let i=0;i<6;i++) add(lw/6,0.12,1.1,-lw/2+lw/12+i*lw/6,2.85,ld/2+0.55, i%2?0xffffff:darkC);
-      add(lw*0.8,0.7,0.15,0,3.35,ld/2+0.1,darkC);
-      const sg=makeTextSprite(b.name,{fontsize:32,color:'#ffe08a',bg:'rgba(0,0,0,0)'}); sg.position.set(0,3.35,ld/2+0.35); sg.scale.set(0.7*sg.userData.ar,0.7,1); g.add(sg);
+      add(1.6,2.4,0.14,0,1.2,ld/2+0.05,0x3b2a22);
+      for(let i=0;i<6;i++) add(lw/6,0.15,1.2,-lw/2+lw/12+i*lw/6,2.9,ld/2+0.6,i%2?0xffffff:b.roof);
+      const sg=makeTextSprite(b.name,{fontsize:30,color:'#ffffff',bg:'rgba(70,40,60,.85)'}); sg.position.set(0,3.75,ld/2+0.3); sg.scale.set(0.85*sg.userData.ar,0.85,1); g.add(sg);
       g.position.set(b.x,0,b.z); g.rotation.y=b.ry||0; worldGroup.add(g);
+      regOcc('box', {x0:b.x-b.w/2-0.4, x1:b.x+b.w/2+0.4, z0:b.z-b.d/2-0.4, z1:b.z+b.d/2+0.4, y0:0, y1:b.h+0.9}, g);
     });
 
     // trees
@@ -336,14 +270,13 @@ const Scene3D = (() => {
     if(z.fountain){
       const f=new THREE.Group(), cm=(c,o)=>new THREE.MeshLambertMaterial({color:c,transparent:!!o,opacity:o||1});
       const cyl=(r1,r2,h,y,c,o)=>{ const m=new THREE.Mesh(new THREE.CylinderGeometry(r1,r2,h,32),cm(c,o)); m.position.y=y; m.castShadow=true; f.add(m); };
-      cyl(3.3,3.5,0.5,0.25,0xe0c9a0);            // vành kem
-      cyl(3.0,3.0,0.1,0.5,0x4fc3d0,0.92);        // mặt nước màu ngọc
-      cyl(0.35,0.5,0.6,0.6,0xb89060);            // vòi phun trung tâm màu nâu
+      cyl(3.4,3.6,0.7,0.35,0xe0c9a0); cyl(3.0,3.0,0.12,0.72,0x7fd6da,0.95); cyl(1.1,1.4,0.5,0.95,0xe0c9a0); cyl(0.85,0.85,0.1,1.22,0x34b4c2);
       const jm=new THREE.MeshBasicMaterial({color:0xc4f3f7,transparent:true,opacity:0.85});
       for(let i=0;i<8;i++){ const a=i/8*Math.PI*2, c=Math.cos(a), s=Math.sin(a);
-        const cv=new THREE.QuadraticBezierCurve3(new THREE.Vector3(0,0.95,0),new THREE.Vector3(c*1.5,3.2,s*1.5),new THREE.Vector3(c*2.6,0.55,s*2.6));
+        const cv=new THREE.QuadraticBezierCurve3(new THREE.Vector3(0,1.3,0),new THREE.Vector3(c*1.6,4.2,s*1.6),new THREE.Vector3(c*2.7,0.8,s*2.7));
         f.add(new THREE.Mesh(new THREE.TubeGeometry(cv,16,0.05,5,false),jm)); }
       f.position.set(z.fountain.x,0.14,z.fountain.z); worldGroup.add(f);
+      regOcc('cyl', {x:z.fountain.x, z:z.fountain.z, r:3.8, h:4.6}, f);
     }
 
     // water (fishing zone)
@@ -368,48 +301,18 @@ const Scene3D = (() => {
       const ring = new THREE.Mesh(new THREE.BoxGeometry(p.w, 0.1, p.d), new THREE.MeshBasicMaterial({color:0xffd700, transparent:true, opacity:0.5}));
       ring.position.set(p.x, 0.1, p.z); worldGroup.add(ring);
       const sign = makeTextSprite(p.label, {fontsize:28, color:'#fff', bg:'rgba(255,180,0,.8)'});
-      sign.position.set(p.x, 3, p.z); sign.scale.set(0.8*sign.userData.ar, 0.8, 1); worldGroup.add(sign);
+      sign.position.set(p.x, 2, p.z); sign.scale.set(7,1.8,1); worldGroup.add(sign);
     }
 
     // màn hình lớn (công viên)
     if(z.screen){
       const sc = z.screen, g = new THREE.Group(), dark = new THREE.MeshLambertMaterial({color:0x1a2538});
-      const gold = new THREE.MeshLambertMaterial({color:0xd4af37});
-      const cy = sc.y + sc.h/2;
-      // tấm nền tối mỏng
-      const backPlate = new THREE.Mesh(new THREE.BoxGeometry(sc.w, sc.h, 0.25), dark); backPlate.position.y = cy; backPlate.castShadow = true; g.add(backPlate);
-      // khung viền vàng mỏng 4 cạnh (như mẫu)
-      const fb=0.45;
-      const fT=new THREE.Mesh(new THREE.BoxGeometry(sc.w+fb*2, fb, 0.35), gold); fT.position.set(0, sc.y+sc.h+fb/2, 0.1); g.add(fT);
-      const fB=new THREE.Mesh(new THREE.BoxGeometry(sc.w+fb*2, fb, 0.35), gold); fB.position.set(0, sc.y-fb/2, 0.1); g.add(fB);
-      const fL=new THREE.Mesh(new THREE.BoxGeometry(fb, sc.h+fb*2, 0.35), gold); fL.position.set(-sc.w/2-fb/2, cy, 0.1); g.add(fL);
-      const fR=new THREE.Mesh(new THREE.BoxGeometry(fb, sc.h+fb*2, 0.35), gold); fR.position.set(sc.w/2+fb/2, cy, 0.1); g.add(fR);
-      // 2 cột cao mảnh màu đen, vượt trên đỉnh màn hình + thanh ngang + đèn spotlight
-      const poleMat = new THREE.MeshLambertMaterial({color:0x14171c});
-      [-1,1].forEach(k=>{ const post = new THREE.Mesh(new THREE.BoxGeometry(0.22, 13.5, 0.22), poleMat); post.position.set(k*(sc.w/2+1.1), 6.75, 0); post.castShadow=true; g.add(post); });
-      const bar = new THREE.Mesh(new THREE.BoxGeometry(sc.w+3, 0.18, 0.18), poleMat); bar.position.set(0, 12.8, 0); g.add(bar);
-      for(let i=-2;i<=2;i++){ const sp=new THREE.Mesh(new THREE.ConeGeometry(0.18,0.5,8), new THREE.MeshBasicMaterial({color:0xfff2c0})); sp.position.set(i*2.2, 12.4, 0); sp.rotation.x=Math.PI; g.add(sp); }
-      // loa 2 bên sân khấu
-      [-1,1].forEach(k=>{ const spk=new THREE.Mesh(new THREE.BoxGeometry(1.1,1.8,0.9), poleMat); spk.position.set(k*(sc.w/2+2.2), 0.9, -1.5); spk.castShadow=true; g.add(spk); });
+      const frame = new THREE.Mesh(new THREE.BoxGeometry(sc.w+1, sc.h+1, 0.8), dark); frame.position.y = sc.y + sc.h/2; frame.castShadow = true; g.add(frame);
+      [-1,1].forEach(k=>{ const post = new THREE.Mesh(new THREE.BoxGeometry(0.9, sc.y+0.5, 0.9), dark); post.position.set(k*sc.w*0.32, (sc.y+0.5)/2, 0); g.add(post); });
       screenCanvas = document.createElement('canvas'); screenCanvas.width = 1280; screenCanvas.height = 720;
       screenTex = new THREE.CanvasTexture(screenCanvas);
       const panel = new THREE.Mesh(new THREE.PlaneGeometry(sc.w, sc.h), new THREE.MeshBasicMaterial({map:screenTex}));
-      panel.position.set(0, cy, 0.16); g.add(panel);
-      // ===== MẶT SAU TV (thân TV) — nhìn từ đằng sau thấy nắp lưng + khe tản nhiệt, KHÔNG thấy video =====
-      const backMat = new THREE.MeshLambertMaterial({color:0x11151c});
-      const back = new THREE.Mesh(new THREE.BoxGeometry(sc.w+0.5, sc.h+0.5, 0.14), backMat);
-      back.position.set(0, sc.y + sc.h/2, -0.25); back.castShadow = true; g.add(back);
-      const ventMat = new THREE.MeshLambertMaterial({color:0x07090d});
-      for(let i=0;i<7;i++){ const v = new THREE.Mesh(new THREE.BoxGeometry(sc.w*0.5, 0.14, 0.06), ventMat); v.position.set(0, sc.y + sc.h*0.30 + i*0.34, -0.32); g.add(v); }
-      // bảng nhãn hiệu phía sau (vật liệu 1 mặt, quay ra sau => chỉ nhìn thấy từ đằng sau)
-      const lc = document.createElement('canvas'); lc.width=512; lc.height=128; const lg=lc.getContext('2d');
-      lg.fillStyle='#0a0d12'; lg.fillRect(0,0,512,128); lg.strokeStyle='#2a3444'; lg.lineWidth=6; lg.strokeRect(6,6,500,116);
-      lg.fillStyle='#7d90a8'; lg.font='bold 44px sans-serif'; lg.textAlign='center'; lg.textBaseline='middle';
-      lg.fillText('GCITY · LED-9000', 256, 64);
-      const labelBack = new THREE.Mesh(new THREE.PlaneGeometry(4.2, 1.05), new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(lc)}));
-      labelBack.position.set(0, sc.y + sc.h*0.16, -0.33); labelBack.rotation.y = Math.PI; g.add(labelBack);
-      // ốc vít trang trí 4 góc nắp lưng
-      [[-1,1],[1,1],[-1,-1],[1,-1]].forEach(([sx,sy])=>{ const s=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.12,0.06,8), ventMat); s.rotation.x=Math.PI/2; s.position.set(sx*(sc.w/2-0.8), sc.y+sc.h/2+sy*(sc.h/2-0.8), -0.32); g.add(s); });
+      panel.position.set(0, sc.y + sc.h/2, 0.41); g.add(panel);
       g.position.set(sc.x, 0, sc.z); worldGroup.add(g);
       screenInfo = sc; setScreenText('GCITY TV', 'Lại gần bấm E để chọn video YouTube');
     }
@@ -418,11 +321,12 @@ const Scene3D = (() => {
       const pad = new THREE.Mesh(new THREE.CylinderGeometry(1.6,1.6,0.2,24), new THREE.MeshLambertMaterial({color:gm.color}));
       pad.position.set(gm.x, 0.1, gm.z); worldGroup.add(pad);
       const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.6), new THREE.MeshLambertMaterial({color:gm.color, emissive:gm.color, emissiveIntensity:0.5}));
-      gem.position.set(gm.x, 2, gm.z); worldGroup.add(gem); spinners.push(gem);
+      gem.position.set(gm.x, 3.1, gm.z); worldGroup.add(gem); spinners.push(gem);
       const lb = makeTextSprite(gm.icon+' '+gm.name, {fontsize:30, color:'#fff', bg:'rgba(0,0,0,.7)'});
-      lb.position.set(gm.x, 3.7, gm.z); lb.scale.set(0.6*lb.userData.ar, 0.6, 1); worldGroup.add(lb);
+      lb.position.set(gm.x, 3.9, gm.z); lb.scale.set(4.2,1.0,1); worldGroup.add(lb); gameLabels.push({s:lb, x:gm.x, z:gm.z});
     });
 
+    camLimit = zoneId==='plaza' ? 54 : z.size*0.68;
     scene.add(worldGroup);
     return z;
   }
@@ -430,117 +334,33 @@ const Scene3D = (() => {
   // ===== TEXT SPRITE (name + chat) =====
   function makeTextSprite(text, opts={}){
     const { fontsize=24, color='#fff', bg='rgba(0,0,0,.6)' } = opts;
-    const SS = 3;   // vẽ gấp 3 lần rồi thu nhỏ → chữ nét trên màn retina và khi camera zoom gần
     const c = document.createElement('canvas');
     const g = c.getContext('2d');
     g.font = `bold ${fontsize}px sans-serif`;
-    const lw = Math.ceil(g.measureText(text).width + 20), lh = fontsize + 16;
-    c.width = lw*SS; c.height = lh*SS;
+    const w = g.measureText(text).width + 20;
+    c.width = w; c.height = fontsize + 16;
     const g2 = c.getContext('2d');
-    g2.scale(SS, SS);
     g2.fillStyle = bg;
-    roundRect2(g2, 0, 0, lw, lh, 8); g2.fill();
+    roundRect2(g2, 0, 0, c.width, c.height, 8); g2.fill();
     g2.font = `bold ${fontsize}px sans-serif`; g2.fillStyle = color; g2.textAlign='center'; g2.textBaseline='middle';
-    if(/,0\)$/.test(bg)){ g2.lineWidth=6; g2.lineJoin='round'; g2.strokeStyle='rgba(20,30,40,.7)'; g2.strokeText(text, lw/2, lh/2); }
-    g2.fillText(text, lw/2, lh/2);
+    if(/,0\)$/.test(bg)){ g2.lineWidth=6; g2.lineJoin='round'; g2.strokeStyle='rgba(20,30,40,.7)'; g2.strokeText(text, c.width/2, c.height/2); }
+    g2.fillText(text, c.width/2, c.height/2);
     const tex = new THREE.CanvasTexture(c);
     const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map:tex, transparent:true, depthTest:false }));
-    spr.userData.ar = lw/lh; return spr;
+    spr.userData.ar = c.width/c.height; return spr;
   }
   function roundRect2(g,x,y,w,h,r){ g.beginPath(); g.moveTo(x+r,y); g.arcTo(x+w,y,x+w,y+h,r); g.arcTo(x+w,y+h,x,y+h,r); g.arcTo(x,y+h,x,y,r); g.arcTo(x,y,x+w,y,r); g.closePath(); }
 
-  // ===== CHARACTER BUILDER (primitives) =====
+  // ===== CHARACTER (chi tiết dựng hình + animation: xem js/character.js) =====
   function createCharacter(gender, idx, name, isMe){
-    const def = CHAR_DEFS[gender][idx % CHAR_DEFS[gender].length];
-    const g = new THREE.Group();
-    const parts = {};
-
-    const skinMat = new THREE.MeshLambertMaterial({color:def.skin});
-    const shirtMat = new THREE.MeshLambertMaterial({color:def.shirt});
-    const pantsMat = new THREE.MeshLambertMaterial({color:def.pants});
-    const hairMat = new THREE.MeshLambertMaterial({color:def.hair});
-
-    // legs (pivot at hip)
-    parts.legL = new THREE.Group(); parts.legL.position.set(-0.35, 1.2, 0);
-    const legL = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.17, 1.2, 10), pantsMat); legL.position.y=-0.6; legL.castShadow=true;
-    parts.legL.add(legL); g.add(parts.legL);
-    parts.legR = new THREE.Group(); parts.legR.position.set(0.35, 1.2, 0);
-    const legR = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.17, 1.2, 10), pantsMat); legR.position.y=-0.6; legR.castShadow=true;
-    parts.legR.add(legR); g.add(parts.legR);
-    // shoes
-    const shoeMat = new THREE.MeshLambertMaterial({color:0x222222});
-    const shoeL = new THREE.Mesh(new THREE.BoxGeometry(0.4,0.2,0.5), shoeMat); shoeL.position.set(-0.35,-0.1,0.05); g.add(shoeL); parts.shoeL=shoeL;
-    const shoeR = shoeL.clone(); shoeR.position.x=0.35; g.add(shoeR); parts.shoeR=shoeR;
-
-    // body
-    let body;
-    if(def.skirt){
-      body = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.9, 1.2, 8), shirtMat);
-    } else {
-      body = new THREE.Mesh(new THREE.CylinderGeometry(0.58, 0.5, 1.3, 14), shirtMat);
-    }
-    body.position.y = 1.85; if(!def.skirt) body.scale.z = 0.62; body.castShadow=true; g.add(body); parts.body=body;
-
-    // arms (pivot at shoulder)
-    parts.armL = new THREE.Group(); parts.armL.position.set(-0.75, 2.4, 0);
-    const armL = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.13, 1.1, 8), skinMat); armL.position.y=-0.55; armL.castShadow=true;
-    parts.armL.add(armL); g.add(parts.armL);
-    parts.armR = new THREE.Group(); parts.armR.position.set(0.75, 2.4, 0);
-    const armR = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.13, 1.1, 8), skinMat); armR.position.y=-0.55; armR.castShadow=true;
-    parts.armR.add(armR); g.add(parts.armR);
-
-    // head
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.5, 12, 10), skinMat);
-    head.position.y = 3.0; head.castShadow=true; g.add(head); parts.head=head;
-    // eyes
-    const eyeMat = new THREE.MeshBasicMaterial({color:0x222});
-    const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.06,6,6), eyeMat); eyeL.position.set(-0.18, 3.05, 0.45); g.add(eyeL);
-    const eyeR = eyeL.clone(); eyeR.position.x=0.18; g.add(eyeR);
-
-    // hair styles
-    if(def.hairStyle==='short' || def.hairStyle==='spiky'){
-      const hair = new THREE.Mesh(new THREE.SphereGeometry(0.55, 12, 8, 0, Math.PI*2, 0, Math.PI/2), hairMat);
-      hair.position.y=3.05; hair.castShadow=true; g.add(hair);
-      if(def.hairStyle==='spiky'){
-        for(let i=0;i<5;i++){
-          const spike = new THREE.Mesh(new THREE.ConeGeometry(0.12,0.4,6), hairMat);
-          const a = -0.5 + i*0.25;
-          spike.position.set(Math.sin(a)*0.3, 3.5, Math.cos(a)*0.3);
-          spike.rotation.x = -a*0.8; g.add(spike);
-        }
-      }
-    } else if(def.hairStyle==='curly'){
-      for(let i=0;i<8;i++){
-        const a = i/8*Math.PI*2;
-        const curl = new THREE.Mesh(new THREE.SphereGeometry(0.2,6,6), hairMat);
-        curl.position.set(Math.cos(a)*0.5, 3.2+Math.sin(i)*0.1, Math.sin(a)*0.5); g.add(curl);
-      }
-    } else if(def.hairStyle==='long'){
-      const hair = new THREE.Mesh(new THREE.SphereGeometry(0.55, 12, 8, 0, Math.PI*2, 0, Math.PI/2), hairMat);
-      hair.position.y=3.05; g.add(hair);
-      const back = new THREE.Mesh(new THREE.BoxGeometry(1.0, 1.0, 0.3), hairMat);
-      back.position.set(0, 2.5, -0.35); g.add(back);
-    } else if(def.hairStyle==='ponytail'){
-      const hair = new THREE.Mesh(new THREE.SphereGeometry(0.55, 12, 8, 0, Math.PI*2, 0, Math.PI/2), hairMat);
-      hair.position.y=3.05; g.add(hair);
-      const tail = new THREE.Mesh(new THREE.CylinderGeometry(0.15,0.2,0.8,8), hairMat);
-      tail.position.set(0, 2.7, -0.5); tail.rotation.x=0.4; g.add(tail);
-    } else if(def.hairStyle==='twin'){
-      const hair = new THREE.Mesh(new THREE.SphereGeometry(0.55, 12, 8, 0, Math.PI*2, 0, Math.PI/2), hairMat);
-      hair.position.y=3.05; g.add(hair);
-      const t1 = new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.18,0.7,8), hairMat);
-      t1.position.set(-0.55, 2.8, -0.2); t1.rotation.z=0.3; g.add(t1);
-      const t2 = t1.clone(); t2.position.x=0.55; t2.rotation.z=-0.3; g.add(t2);
-    }
-
-    // name tag
+    const b = GChar.build(gender, idx);
+    const g = b.group, parts = b.parts;
     const nameTag = makeTextSprite(name, { fontsize:30, color:'#ffffff', bg:'rgba(0,0,0,0)' });
-    nameTag.position.y = 3.9; nameTag.scale.set(0.75*nameTag.userData.ar, 0.75, 1);
+    nameTag.position.y = 4.3; nameTag.scale.set(0.8*nameTag.userData.ar, 0.8, 1);
     g.add(nameTag); parts.nameTag = nameTag;
     parts.chatBubble = null;
-
-    g.scale.setScalar(0.62);
-    g.userData = { parts, gender, idx, def, action:null, actionT:0, moving:false, walkT:0, dir:0 };
+    g.scale.setScalar(0.58);
+    g.userData = { parts, gender, idx, def:b.def, action:null, actionT:0, moving:false, walkT:0, dir:0 };
     return g;
   }
 
@@ -549,71 +369,103 @@ const Scene3D = (() => {
     if(parts.chatBubble){ charGroup.remove(parts.chatBubble); parts.chatBubble = null; }
     if(!text) return;
     const bubble = makeTextSprite(text.length>24? text.slice(0,24)+'…' : text, { fontsize:22, color:'#222', bg:'#ffffff' });
-    bubble.position.y = 4.6; bubble.scale.set(5, 1.2, 1);
+    bubble.position.y = 5.0; bubble.scale.set(5, 1.2, 1);
     charGroup.add(bubble); parts.chatBubble = bubble;
   }
 
-  // ===== ANIMATION =====
-  function updateCharacter(charGroup, dt, time){
-    const ud = charGroup.userData;
-    const p = ud.parts;
-    ud.walkT += dt * (ud.moving? 8 : 0);
-    const swing = ud.moving ? Math.sin(ud.walkT)*0.6 : 0;
-
-    // reset
-    p.legL.rotation.x = swing; p.legR.rotation.x = -swing;
-    p.armL.rotation.x = -swing*0.8; p.armR.rotation.x = swing*0.8;
-    p.armL.rotation.z = 0; p.armR.rotation.z = 0;
-    charGroup.position.y = 0;
-    charGroup.rotation.y = ud.face || 0;
-    p.body.rotation.z = 0;
-    p.body.scale.y = 1;
-
-    if(ud.action){
-      ud.actionT += dt;
-      const t = ud.actionT;
-      if(ud.action==='jump'){
-        charGroup.position.y = Math.abs(Math.sin(t*Math.PI/0.8)) * 1.5;
-      } else if(ud.action==='sit'){
-        charGroup.position.y = -0.4;
-        p.legL.rotation.x = 1.2; p.legR.rotation.x = 1.2;
-      } else if(ud.action==='wave'){
-        p.armR.rotation.x = -2.2 + Math.sin(t*6)*0.3;
-      } else if(ud.action==='cry'){
-        p.armL.rotation.x = -1.8; p.armR.rotation.x = -1.8;
-        p.body.rotation.z = Math.sin(t*4)*0.05;
-      } else if(ud.action && ud.action.startsWith('dance')){
-        // generic dance: arm wave + body bounce + spin
-        const bt = t*5;
-        p.armL.rotation.x = -1.5 + Math.sin(bt)*0.8;
-        p.armR.rotation.x = -1.5 + Math.cos(bt)*0.8;
-        p.armL.rotation.z = Math.sin(bt)*0.5;
-        p.armR.rotation.z = -Math.cos(bt)*0.5;
-        charGroup.position.y = Math.abs(Math.sin(bt*2))*0.3;
-        charGroup.rotation.y += Math.sin(bt*0.7)*0.6;
-        p.body.scale.y = 1 + Math.sin(bt*2)*0.05;
-      } else if(ud.action==='holla'){
-        p.armL.rotation.x = -2.5; p.armR.rotation.x = -2.5;
-        charGroup.position.y = Math.abs(Math.sin(t*8))*0.2;
-      }
-    }
-  }
+  // ===== ANIMATION (đi/chạy/ngồi/vẫy/nhảy/7 điệu nhảy + thở, chớp mắt, tóc đung đưa) =====
+  function updateCharacter(charGroup, dt, time){ GChar.update(charGroup, dt, time); }
 
   // ===== CAMERA =====
-  function updateCamera(px, pz, py = 0){
-    const now = performance.now();
-    const dt = Math.min(0.05, (now-camLastT)/1000); camLastT = now;
-    // dịch chuyển xa (qua cổng zone, spawn lại) → đặt camera ngay, không cho "bay" xuyên map
-    if(Math.hypot(px-camLastX, pz-camLastZ) > 6) camSnap = true;
-    camLastX = px; camLastZ = pz;
+  // - bám nhân vật có làm mượt (không phụ thuộc FPS), xoay chuột/cảm ứng + phím Q/R
+  // - không ra ngoài rìa đảo; chui vào cây/tòa nhà thì kéo camera lại, vật che giữa camera và nhân vật thì làm mờ
+  const VIEWS = [{pitch:1.4, dist:95, name:'Toàn cảnh'}, {pitch:0.85, dist:22.7, name:'Góc nghiêng'}, {pitch:0.2, dist:13, name:'Ngang tầm mắt'}];
+  const LOOK_Y = 1.0, MIN_CAM_DIST = 2.2, FADE_OP = 0.25;
+  window.addEventListener('keydown', e=>{ if(e.target && e.target.tagName==='INPUT') return; camKeys[e.code] = true; });
+  window.addEventListener('keyup', e=>{ camKeys[e.code] = false; });
+  function setCamView(){ camView = (camView+1)%3; camTween = {pitch:VIEWS[camView].pitch, dist:VIEWS[camView].dist}; return VIEWS[camView].name; }
 
-    const cp = Math.cos(camPitch), ly = py + CAM.lookY;
-    camTarget.set(px + Math.sin(camAngle)*cp*camDist,
-                  ly + Math.sin(camPitch)*camDist,
-                  pz + Math.cos(camAngle)*cp*camDist);
-    if(camSnap){ camera.position.copy(camTarget); camSnap = false; }
-    else camera.position.lerp(camTarget, 1 - Math.pow(1-CAM.follow, dt*60));   // = lerp .2 @60FPS, đồng đều ở mọi tần số quét
-    camera.lookAt(px, ly, pz);
+  // đoạn thẳng O + t*D (t∈[0,1]) cắt hộp / trụ đứng; trả về khoảng [hitT0, hitT1] hoặc false. Gốc nằm trong vật => bỏ qua.
+  let hitT0 = 0, hitT1 = 1;
+  function segBox(ox,oy,oz,dx,dy,dz,b){
+    if(ox>b.x0 && ox<b.x1 && oz>b.z0 && oz<b.z1 && oy>b.y0 && oy<b.y1) return false;
+    let t0=0, t1=1;
+    const slab=(o,d,mn,mx)=>{ if(Math.abs(d)<1e-9) return o>=mn && o<=mx; let a=(mn-o)/d, c=(mx-o)/d; if(a>c){ const k=a; a=c; c=k; } if(a>t0) t0=a; if(c<t1) t1=c; return t0<=t1; };
+    if(!slab(ox,dx,b.x0,b.x1) || !slab(oy,dy,b.y0,b.y1) || !slab(oz,dz,b.z0,b.z1)) return false;
+    hitT0=t0; hitT1=t1; return true;
+  }
+  function segCyl(ox,oy,oz,dx,dy,dz,c){
+    const fx=ox-c.x, fz=oz-c.z, cc=fx*fx+fz*fz-c.r*c.r;
+    if(cc<0 && oy<c.h) return false;
+    let t0=0, t1=1;
+    const a=dx*dx+dz*dz;
+    if(a<1e-9){ if(cc>0) return false; }
+    else { const b=2*(fx*dx+fz*dz), disc=b*b-4*a*cc; if(disc<0) return false; const q=Math.sqrt(disc); t0=Math.max(t0,(-b-q)/(2*a)); t1=Math.min(t1,(-b+q)/(2*a)); if(t0>t1) return false; }
+    if(Math.abs(dy)<1e-9){ if(oy<0 || oy>c.h) return false; }
+    else { let a2=(0-oy)/dy, c2=(c.h-oy)/dy; if(a2>c2){ const k=a2; a2=c2; c2=k; } t0=Math.max(t0,a2); t1=Math.min(t1,c2); if(t0>t1) return false; }
+    hitT0=t0; hitT1=t1; return true;
+  }
+  function applyFade(o){
+    const solid = o.op > 0.995;
+    o.mats.forEach(m=>{
+      const tr = m.userData.t0 || !solid;
+      if(m.transparent !== tr){ m.transparent = tr; m.needsUpdate = true; }
+      m.opacity = m.userData.o0 * o.op;
+      m.depthWrite = solid;
+    });
+    o.applied = o.op;
+  }
+
+  function updateCamera(px, pz){
+    const now = performance.now(), dt = Math.min(0.05, Math.max(0.001, (now-camLast)/1000)); camLast = now;
+    // phím Q/R xoay camera
+    if(camKeys.KeyQ){ camAngle += 1.8*dt; camTween = null; }
+    if(camKeys.KeyR){ camAngle -= 1.8*dt; camTween = null; }
+    // chuyển góc nhìn (nút 🎥) theo thời gian thực
+    if(camTween){
+      const k = 1-Math.exp(-dt*9);
+      camPitch += (camTween.pitch-camPitch)*k; camDist += (camTween.dist-camDist)*k;
+      if(Math.abs(camTween.pitch-camPitch)<0.003 && Math.abs(camTween.dist-camDist)<0.05) camTween = null;
+    }
+    // điểm nhìn bám nhân vật có làm mượt (dịch chuyển xa => nhảy thẳng tới)
+    if(!camFollow || Math.hypot(px-camFollow.x, pz-camFollow.z) > 8){ camFollow = {x:px, z:pz}; camCurS = 1; }
+    const kf = 1-Math.exp(-dt*16); camFollow.x += (px-camFollow.x)*kf; camFollow.z += (pz-camFollow.z)*kf;
+    const fx = camFollow.x, fz = camFollow.z;
+
+    // vị trí camera mong muốn: O + D
+    const r = camDist*Math.cos(camPitch);
+    const dx = Math.sin(camAngle)*r, dy = camDist*Math.sin(camPitch), dz = Math.cos(camAngle)*r;
+    const len = Math.hypot(dx,dy,dz);
+    let sFinal = 1;
+
+    // 1) không ra ngoài rìa đảo
+    { const a = dx*dx+dz*dz, b = 2*(fx*dx+fz*dz), c = fx*fx+fz*fz-camLimit*camLimit;
+      if(a>1e-9 && c<0){ const tmax = (-b+Math.sqrt(b*b-4*a*c))/(2*a); if(tmax<sFinal) sFinal = Math.max(0, tmax); } }
+
+    // 2) vật cản: camera nằm trong vật => kéo lại; vật nằm giữa camera và nhân vật => làm mờ
+    const minS = Math.min(1, MIN_CAM_DIST/len), hits = [];
+    for(let i=0;i<camOcc.length;i++){
+      const o = camOcc[i];
+      const hit = o.type==='box' ? segBox(fx,LOOK_Y,fz,dx,dy,dz,o) : segCyl(fx,LOOK_Y,fz,dx,dy,dz,o);
+      o.want = 1;
+      if(!hit) continue;
+      hits.push([o, hitT0]);
+      if(hitT1 >= 0.9999){ const cand = hitT0 - 0.35/len; if(cand >= minS && cand < sFinal) sFinal = cand; }
+    }
+    hits.forEach(([o,t0])=>{ if(t0 < sFinal) o.want = FADE_OP; });
+    // làm mượt: lùi vào nhanh, nới ra chậm
+    camCurS += (sFinal-camCurS) * (1-Math.exp(-dt*(sFinal<camCurS ? 22 : 4)));
+    camera.position.set(fx + dx*camCurS, LOOK_Y + dy*camCurS, fz + dz*camCurS);
+    camera.lookAt(fx, LOOK_Y, fz);
+
+    // áp dụng độ mờ
+    const kfade = 1-Math.exp(-dt*10);
+    for(let i=0;i<camOcc.length;i++){
+      const o = camOcc[i]; o.op += (o.want-o.op)*kfade; if(Math.abs(o.op-o.want)<0.01) o.op = o.want;
+      if(Math.abs(o.op-o.applied)>0.004 || (o.op===o.want && o.applied!==o.op)) applyFade(o);
+    }
+    // nhãn mini game mờ đi khi nhân vật đứng gần (khỏi che mặt)
+    for(let i=0;i<gameLabels.length;i++){ const L = gameLabels[i], near = Math.hypot(px-L.x, pz-L.z) < 3.6; const m = L.s.material; m.opacity += ((near?0.2:1)-m.opacity)*kfade; }
   }
   function getMoveDir(){
     // trả về hướng di chuyển tương đối camera: {x, z}
@@ -676,37 +528,18 @@ const Scene3D = (() => {
     g.fillStyle = '#fff'; g.font = '44px sans-serif'; g.fillText(b, 640, 430);
     screenTex.needsUpdate = true;
   }
-  // 4 góc màn hình (TL,TR,BR,BL) theo toạ độ pixel; null nếu không có / quá nhỏ / đang nhìn từ ĐẰNG SAU TV
+  // 4 góc màn hình (TL,TR,BR,BL) theo toạ độ pixel; null nếu không có/ở sau camera
   function screenCorners2D(){
     if(!screenInfo) return null;
-    const sc = screenInfo, zf = sc.z + 0.18, W = window.innerWidth, H = window.innerHeight;
+    const sc = screenInfo, zf = sc.z + 0.43, W = window.innerWidth, H = window.innerHeight;
     camera.updateMatrixWorld();
-    // Màn hình hướng về +z (về phía công viên). Camera ở phía sau (z < zf) => không chiếu iframe (tránh ảnh lật ngược)
-    if(camera.position.z < zf) return null;
     const vs = [[-1,1],[1,1],[1,0],[-1,0]].map(([kx,ky])=> new THREE.Vector3(sc.x + kx*sc.w/2, sc.y + ky*sc.h, zf));
     if(vs.some(v=> v.clone().applyMatrix4(camera.matrixWorldInverse).z > -0.2)) return null;
-    const pts = vs.map(v=>{ const p = v.project(camera); return [(p.x+1)/2*W, (1-p.y)/2*H]; });
-    // Kiểm tra chiều quay (winding): diện tích có dấu <= 0 nghĩa là nhìn từ mặt sau (homography sẽ lật ảnh) => ẩn
-    let area = 0;
-    for(let i=0;i<4;i++){ const x1=pts[i][0], y1=pts[i][1], x2=pts[(i+1)%4][0], y2=pts[(i+1)%4][1]; area += x1*y2 - x2*y1; }
-    if(area <= 0) return null;
-    return pts;
+    return vs.map(v=>{ const p = v.project(camera); return [(p.x+1)/2*W, (1-p.y)/2*H]; });
   }
 
   // ===== RENDER LOOP =====
   function render(time){
-    if(!RES.fixed){   // chỉ hạ, không tăng lại → không bị giật qua lại giữa 2 mức
-      const now = performance.now();
-      if(document.hidden){ RES.t = 0; RES.n = 0; }
-      else if(!RES.t){ RES.t = now; RES.n = 0; }
-      else if(++RES.n && now-RES.t >= 1500){
-        const fps = RES.n*1000/(now-RES.t); RES.t = now; RES.n = 0;
-        if(RES.warm) RES.warm = false;                      // bỏ qua cửa sổ đầu (biên dịch shader)
-        else if(fps < 24 && RES.cur > RES.min){
-          if(++RES.low >= 2){ RES.low = 0; RES.cur = Math.max(RES.min, RES.cur-0.5); renderer.setPixelRatio(RES.cur); renderer.setSize(window.innerWidth, window.innerHeight); }
-        } else RES.low = 0;
-      }
-    }
     spinners.forEach(m=>{ m.rotation.y = time*1.5; });
     if(ferris){ ferris.rot.rotation.z = time*0.2; ferris.gond.forEach(g=>g.rotation.z = -time*0.2); }
     // fountain particles
@@ -735,6 +568,6 @@ const Scene3D = (() => {
   }
 
   return { init, buildZone, createCharacter, setChatBubble, updateCharacter,
-    updateCamera, getMoveDir, collides, atPortal, nearBuilding, atDock, render, nearSpot, setScreenText, screenCorners2D, setRacers, setRaceBoard,
-    getZone, CHAR_DEFS, get scene(){return scene;}, get camera(){return camera;}, get pixelRatio(){return RES.cur;} };
+    updateCamera, getMoveDir, collides, atPortal, nearBuilding, atDock, render, nearSpot, setScreenText, screenCorners2D, setRacers, setRaceBoard, setCamView,
+    getZone, CHAR_DEFS, get scene(){return scene;}, get camera(){return camera;} };
 })();

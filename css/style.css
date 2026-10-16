@@ -35,7 +35,7 @@ input { font-family:inherit; outline:none; }
   text-align:center; cursor:pointer; transition:all .2s; }
 .char-card:hover { transform:translateY(-2px); background:#262640; }
 .char-card.selected { border-color:#ffd700; background:#2a2a3e; box-shadow:0 0 16px rgba(255,215,0,.3); }
-.char-card canvas { width:64px; height:80px; }
+.char-card canvas { width:88px; height:110px; }
 .char-card .char-label { font-size:12px; color:#aaaacc; margin-top:4px; }
 .char-name-row { margin-bottom:16px; }
 .char-name-row input { width:100%; padding:12px; background:#1e1e30; border:1px solid #2a2a44; border-radius:8px;
@@ -175,7 +175,7 @@ input { font-family:inherit; outline:none; }
   border-radius:20px; font-size:14px; z-index:15; pointer-events:none; }
 
 /* Character preview canvas in select */
-.char-card canvas { width:64px; height:80px; image-rendering:auto; }
+.char-card canvas { width:88px; height:110px; image-rendering:auto; }
 
 
 /* ===== Công viên: màn hình TV + mini game ===== */
