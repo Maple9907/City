@@ -58,7 +58,7 @@ const Fishing = (() => {
     if(state==='biting'){
       // thành công
       state='caught'; timer=1.5;
-      player.inventory.fish++;
+      player.inventory.fish++; player.inventory.fishValue = (player.inventory.fishValue||0) + currentFish.value;
       player.coins += 0; // bán mới được tiền
       onEvent({type:'caught', fish:currentFish});
       setTimeout(()=>{ state='idle'; }, 1500);
@@ -73,9 +73,9 @@ const Fishing = (() => {
   function sellAll(player){
     const n = player.inventory.fish;
     // giá trung bình mỗi con = 30 (đơn giản hóa)
-    const money = n * 35;
+    const money = player.inventory.fishValue || 0;
     player.coins += money;
-    player.inventory.fish = 0;
+    player.inventory.fish = 0; player.inventory.fishValue = 0;
     return { count:n, money };
   }
 

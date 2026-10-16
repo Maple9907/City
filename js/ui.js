@@ -18,16 +18,22 @@ const UI = (() => {
   // ---- Character Select ----
   function renderCharGrid(){
     const grid = $('charGrid'); grid.innerHTML = '';
-    const chars = Assets.charDefs[selectedGender];
+    const chars = (typeof Scene3D!=='undefined'? Scene3D.CHAR_DEFS : {male:[],female:[]})[selectedGender];
     chars.forEach((def, i)=>{
       const card = document.createElement('div');
       card.className = 'char-card' + (i===selectedChar?' selected':'');
       const cv = document.createElement('canvas');
       cv.width = 64; cv.height = 80;
       const ctx = cv.getContext('2d');
-      ctx.imageSmoothingEnabled = false;
-      ctx.scale(2,2);
-      Assets.drawCharacter(ctx, selectedGender, i, 32, 70, 0, 0, null, 0);
+      // preview đơn giản: đầu + thân theo màu nhân vật
+      ctx.fillStyle='#'+def.skin.toString(16).padStart(6,'0');
+      ctx.beginPath(); ctx.arc(32,26,11,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle='#'+def.hair.toString(16).padStart(6,'0');
+      ctx.beginPath(); ctx.arc(32,22,11,Math.PI,0); ctx.fill();
+      ctx.fillStyle='#'+def.shirt.toString(16).padStart(6,'0');
+      ctx.fillRect(22,36,20,22);
+      ctx.fillStyle='#'+def.pants.toString(16).padStart(6,'0');
+      ctx.fillRect(23,58,8,18); ctx.fillRect(33,58,8,18);
       card.appendChild(cv);
       const lbl = document.createElement('div');
       lbl.className='char-label';
@@ -80,8 +86,10 @@ const UI = (() => {
     $('btnFish').onclick = ()=> togglePanel('fishPanel');
     $('btnShop').onclick = ()=> { togglePanel('shopPanel'); renderShop('cinema'); };
     $('btnInventory').onclick = ()=> { togglePanel('inventoryPanel'); renderInventory(callbacks.getPlayer()); };
+    $('btnTV').onclick = ()=> togglePanel('tvPanel');
+    $('btnMini').onclick = ()=> Park.openMenu();
     $('btnPlayers').onclick = ()=> { togglePanel('playersPanel'); callbacks.refreshPlayers(); };
-    $('btnMap').onclick = ()=> toast('Bản đồ: Quảng trường ở giữa, đảo câu cá ở cổng tàu phía dưới.');
+    ($('btnMap')||{}).onclick = ()=> toast('Bản đồ: Quảng trường ở giữa, đảo câu cá ở cổng tàu phía dưới.');
 
     // chat
     $('chatSend').onclick = sendChat;
@@ -219,7 +227,7 @@ const UI = (() => {
   function updateHUD(p){
     $('hudName').textContent = p.name;
     $('hudCoin').textContent = p.coins;
-    $('hudZone').textContent = GameMap.getZone(p.zone).name;
+    $('hudZone').textContent = (Scene3D.getZone(p.zone)||{}).name || '';
     $('fishCount').textContent = p.inventory.fish;
     const bait = p.inventory.lure>0?`Mồi giả (${p.inventory.lure})`:(p.inventory.shrimp>0?`Tép (${p.inventory.shrimp})`:`Giun (${p.inventory.worm})`);
     $('fishBait').textContent = bait;

@@ -164,3 +164,53 @@ input { font-family:inherit; outline:none; }
 /* Chat bubble above player (canvas-drawn, but style for DOM fallback) */
 .chat-bubble { position:absolute; background:#fff; color:#222; padding:4px 10px; border-radius:12px;
   font-size:12px; max-width:160px; word-wrap:break-word; pointer-events:none; z-index:5; }
+
+/* 3D container */
+#threeContainer { position:absolute; inset:0; }
+#threeContainer canvas { display:block; }
+
+/* Interact hint (E key) */
+.interact-hint { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+  background:rgba(0,0,0,.75); border:1px solid #ffd700; color:#ffd700; padding:8px 18px;
+  border-radius:20px; font-size:14px; z-index:15; pointer-events:none; }
+
+/* Character preview canvas in select */
+.char-card canvas { width:64px; height:80px; image-rendering:auto; }
+
+
+/* ===== Công viên: màn hình TV + mini game ===== */
+#tvFrame { position:absolute; left:0; top:0; width:960px; height:540px; border:0; background:#000;
+  transform-origin:0 0; visibility:hidden; z-index:1; }
+.panel { z-index:20; }
+.hud-bottom, .joystick, .toast, .interact-hint { z-index:10; }
+.hud-bottom { flex-wrap:wrap; justify-content:center; max-width:96vw; }
+.interact-hint { pointer-events:auto; cursor:pointer; }
+.tv-panel { right:14px; top:60px; width:320px; max-width:calc(100vw - 28px); }
+.tv-body, .mg-body { padding:14px; }
+.tv-body input, .mg-input { width:100%; padding:10px; background:#1e1e30; border:1px solid #2a2a44; border-radius:8px; color:#fff; margin-bottom:8px; }
+.mini-panel { left:50%; top:50%; transform:translate(-50%,-50%); width:360px; max-width:calc(100vw - 28px); }
+.mg-info { font-size:13px; color:#aaa; margin:8px 0; text-align:center; }
+.mg-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
+.mg-card { aspect-ratio:1; font-size:26px; background:#1e1e30; color:#fff; border-radius:10px; }
+.mg-card.up { background:#2a3a5e; }
+.mg-bar { position:relative; height:36px; background:#1e1e30; border-radius:8px; margin:12px 0; overflow:hidden; }
+.mg-zone { position:absolute; left:38%; width:24%; top:0; bottom:0; background:rgba(76,175,80,.55); }
+.mg-mark { position:absolute; top:0; bottom:0; width:4px; background:#ffd700; transform:translateX(-50%); }
+.mg-result { text-align:center; font-size:18px; line-height:1.8; margin-bottom:10px; }
+
+/* ===== Look kiểu Gaubong ===== */
+body .hud-back{position:absolute;left:10px;top:10px;z-index:30;width:46px;height:46px;border-radius:12px;border:1px solid #5d7a90;background:#2f4558;color:#fff;font-size:24px}
+body .hud-player{margin-left:56px;background:rgba(47,69,88,.92);border:1px solid #5d7a90;border-radius:12px}
+body .hud-btn{background:#2f4558;border:1px solid #5d7a90;border-radius:12px}
+body .hud-bottom{position:absolute;left:auto;right:10px;top:120px;bottom:auto;transform:none;width:auto;display:flex;flex-direction:column;gap:10px;background:none;border:0;box-shadow:none;padding:0}
+body .action-btn{width:48px;height:48px;padding:0;border-radius:50%;background:#1f3550;border:1px solid #6b8aa6;display:flex;align-items:center;justify-content:center}
+body .action-btn .lb{display:none}
+body .action-btn .ic{font-size:22px;line-height:1}
+body .joystick{background:radial-gradient(circle at 50% 35%,#7d8a84,#34474d 72%);border:3px solid #55737c}
+body .joystick-knob{background:radial-gradient(circle at 35% 30%,#8fd0f5,#1f5f94 70%);border:3px solid #a8d8f0}
+body .interact-hint{background:#fff;color:#2a2f36;border-radius:16px;box-shadow:0 2px 8px rgba(0,0,0,.25)}
+
+body .hud-bottom{top:104px;gap:8px}
+body .action-btn{width:44px;height:44px}
+body .action-btn.on{background:#3b6fa0}
+.fps{position:absolute;right:12px;bottom:10px;color:#2b3a45;font:600 14px sans-serif;pointer-events:none;z-index:20}

@@ -28,7 +28,7 @@ const Net = (() => {
       players[id] = {
         id, name: botNames[i%botNames.length],
         gender, charIndex: Math.floor(Math.random()*6),
-        x: 200 + Math.random()*600, y: 200 + Math.random()*400,
+        x: -15 + Math.random()*30, y: -10 + Math.random()*24,
         dir: Math.floor(Math.random()*4), moving: false,
         action: null, actionT: 0, targetX:0, targetY:0,
         chatT: 5 + Math.random()*10
@@ -47,17 +47,17 @@ const Net = (() => {
         emit('chat', { name:p.name, text: lines[Math.floor(Math.random()*lines.length)], id:p.id });
       }
       if(!p.moving && Math.random()<0.01){
-        p.targetX = 100 + Math.random()*800;
-        p.targetY = 100 + Math.random()*500;
+        p.targetX = -15 + Math.random()*30;
+        p.targetY = -10 + Math.random()*24;
         p.moving = true;
       }
       if(p.moving){
         const dx = p.targetX - p.x, dy = p.targetY - p.y;
         const d = Math.hypot(dx,dy);
-        if(d < 5){ p.moving = false; }
+        if(d < 0.3){ p.moving = false; }
         else {
-          const sp = 80*dt;
-          p.x += dx/d*sp; p.y += dy/d*sp;
+          const sp = 1.6*dt, nx = p.x + dx/d*sp, nz = p.y + dy/d*sp;
+          if(typeof Scene3D!=='undefined' && Scene3D.collides('plaza', nx, nz, 1)) p.moving = false; else { p.x = nx; p.y = nz; }
           if(Math.abs(dx)>Math.abs(dy)) p.dir = dx>0?1:3; else p.dir = dy>0?0:2;
         }
       }
