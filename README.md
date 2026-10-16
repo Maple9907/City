@@ -5,9 +5,7 @@ Bản 3D thật dùng Three.js. Yêu cầu trình duyệt hỗ trợ WebGL (Chro
 ## Chạy
 Mở `index.html` hoặc `npx serve .`
 
-## Nếu lỗi "WebGL not supported"
-- Dùng bản 2D trong thư mục `gcity-2d/` (chạy được mọi trình duyệt)
-- Hoặc bật hardware acceleration trong trình duyệt
+## 
 
 ## Tính năng
 - Quảng trường 3D thật: tòa nhà, cây, đài phun nước có hạt nước, đèn đường, ghế đá
@@ -27,4 +25,3 @@ Toàn bộ asset tự vẽ bằng Three.js geometry (không file ngoài). Thay b
 - **Màn hình lớn** phía bắc chiếu YouTube: đứng gần bấm E (hoặc nút 📺 TV), dán link. Video bám theo màn hình 3D khi xoay camera
 - **3 mini game** (ô phát sáng, E hoặc nút 🎮): Lật hình, Canh nhịp, Đoán số (phí 5🪙)
 - Phải chạy qua http (`npx serve .` / GitHub Pages). Mở file:// thì YouTube báo lỗi 153
-- Sửa lỗi cũ: game không vào được (thiếu `btnMap`), bot nằm ngoài map, nhân vật không quay mặt, cá cắn không báo, tiền cá bị cộng 2 lần, gõ chữ "e/w/a/s" vào ô chat bị kích hoạt điều khiển
