@@ -1,7 +1,7 @@
 /* ===== GCITY Park: màn hình lớn chiếu YouTube + mini game =====
  * - Video YouTube là iframe HTML, được "dán" lên màn hình 3D bằng CSS matrix3d (homography
  *   từ 4 góc màn hình đã project ra màn hình 2D) nên xoay camera video vẫn bám theo.
- * - Mini game: Lật hình, Canh nhịp, Đoán số (phí 5🪙, thắng nhận xu).
+ * - Mini game: Lật hình (phí 5🪙), Đánh lô (tự đặt xu, 10 giải quay độc lập).
  */
 const Park = (() => {
   const $ = id => document.getElementById(id);
@@ -125,34 +125,80 @@ const Park = (() => {
         grid.appendChild(c);
       });
     }},
-    timing: { name:'🎯 Canh nhịp', fee:5, start(b, end){
-      b.innerHTML = '<div class="mg-info">Bấm DỪNG khi vạch vàng nằm trong vùng xanh!</div><div class="mg-bar"><div class="mg-zone"></div><div class="mg-mark"></div></div><button class="btn-primary btn-wide" id="mgStop">DỪNG</button>';
-      const mark = b.querySelector('.mg-mark'), t0 = performance.now();
-      let t = 0, stopped = false;
-      const tick = now=>{
-        if(stopped || $('gamePanel').classList.contains('hidden')) return;
-        const ph = ((now - t0)/900) % 2; t = ph < 1 ? ph : 2 - ph;
-        mark.style.left = (t*100) + '%'; requestAnimationFrame(tick);
-      };
-      requestAnimationFrame(tick);
-      b.querySelector('#mgStop').onclick = ()=>{
-        stopped = true; const d = Math.abs(t - .5);
-        end(d < .04 ? 60 : d < .12 ? 25 : 0, d < .12 ? 'Trúng vùng xanh!' : 'Trượt rồi!');
-      };
-    }},
-    guess: { name:'🔢 Đoán số', fee:5, start(b, end){
-      const n = 1 + Math.floor(Math.random()*100); let left = 6;
-      b.innerHTML = '<div class="mg-info">Đoán số từ 1 đến 100. Còn <b id="mgLeft">6</b> lượt.</div><input id="mgNum" type="number" min="1" max="100" class="mg-input"><button class="btn-primary btn-wide" id="mgGo">Đoán</button><div id="mgHint" class="mg-info"></div>';
-      b.querySelector('#mgGo').onclick = ()=>{
-        const v = +b.querySelector('#mgNum').value;
-        if(!v || v < 1 || v > 100){ UI.toast('Nhập số từ 1 đến 100'); return; }
-        left--; b.querySelector('#mgLeft').textContent = left;
-        if(v === n) return end(10 + left*8, `Đúng rồi, số ${n}!`);
-        if(!left) return end(0, `Hết lượt, số đúng là ${n}`);
-        b.querySelector('#mgHint').textContent = v < n ? '⬆️ Số cần tìm lớn hơn' : '⬇️ Số cần tìm nhỏ hơn';
-      };
-    }},
+    lo: { name:'🎟 Đánh lô', fee:0, custom:true, start(b){ loStart(b); } },
   };
+
+  // ---------- Đánh lô ----------
+  // Chọn số 01–99 + đặt xu -> bấm "Kết quả": 10 giải quay lần lượt, mỗi giải là một lần quay ĐỘC LẬP (có thể trùng số giữa các giải).
+  // Mỗi giải trùng số đã chọn => thưởng x10 tiền đặt; trúng nhiều giải thì cộng dồn (2 giải = x20, 3 giải = x30, ...).
+  const LO = { PRIZES:10, MULT:10, MAX:10000000000, pick:1, bet:10000, busy:false, res:[], shown:0, body:null, summary:'' };
+  const nf  = n => String(Math.floor(n)).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  const two = n => String(n).padStart(2, '0');
+  const wait = ms => new Promise(r => setTimeout(r, ms));
+  const loQ = sel => (LO.body && LO.body.isConnected) ? LO.body.querySelector(sel) : null;   // panel đóng/mở lại giữa chừng vẫn an toàn
+  function loBalance(){ const el = loQ('#loBal'); if(el) el.textContent = nf(player.coins) + ' xu'; }
+  function loLock(on){
+    ['#loPick', '#loBet', '#loGo'].forEach(s => { const el = loQ(s); if(el) el.disabled = on; });
+    const go = loQ('#loGo'); if(go) go.textContent = on ? 'Đang quay…' : 'Kết quả';
+  }
+  function loStart(body){
+    if(!LO.busy) LO.bet = Math.max(1, Math.min(LO.bet, Math.floor(player.coins) || 1));
+    LO.body = body;
+    body.innerHTML = `
+      <div class="lo-bal"><span>Số dư</span><b id="loBal">${nf(player.coins)} xu</b></div>
+      <div class="lo-rule">Số 01–99 · ${LO.PRIZES} giải · Thưởng ×${LO.MULT}/giải trúng</div>
+      <div class="lo-row">
+        <label>Số chọn<input id="loPick" class="mg-input" inputmode="numeric" maxlength="2" value="${LO.pick}"></label>
+        <label>Đặt xu<input id="loBet" class="mg-input" inputmode="numeric" value="${LO.bet}"></label>
+      </div>
+      <div class="lo-rule">Tối đa ${nf(LO.MAX)} xu/lượt.</div>
+      <button class="btn-primary btn-wide" id="loGo">Kết quả</button>
+      <div class="lo-rule" id="loSum">${LO.summary}</div>
+      <div class="lo-title">Kết quả quay số</div>
+      <div class="lo-grid">${Array.from({length:LO.PRIZES}, (_, i) => `<div class="lo-box" id="loB${i}"><small>Giải ${i+1}</small><b>··</b></div>`).join('')}</div>`;
+    body.querySelectorAll('#loPick, #loBet').forEach(inp => inp.oninput = () => { inp.value = inp.value.replace(/\D/g, ''); });
+    // dựng lại các giải đã quay (nếu mở lại panel khi đang quay / sau khi quay xong)
+    LO.res.slice(0, LO.shown).forEach((v, i) => {
+      const el = body.querySelector('#loB' + i); el.lastChild.textContent = two(v); el.classList.toggle('hit', v === LO.pick);
+    });
+    if(LO.busy) loLock(true);
+    body.querySelector('#loGo').onclick = () => {
+      if(LO.busy) return;
+      const pick = parseInt(loQ('#loPick').value, 10), bet = parseInt(loQ('#loBet').value, 10);
+      if(!(pick >= 1 && pick <= 99)){ UI.toast('Chọn số từ 01 đến 99'); return; }
+      if(!(bet >= 1)){ UI.toast('Nhập số xu muốn đặt'); return; }
+      if(bet > LO.MAX){ UI.toast(`Tối đa ${nf(LO.MAX)} xu/lượt`); return; }
+      if(bet > player.coins){ UI.toast('Không đủ xu!'); return; }
+      LO.pick = pick; LO.bet = bet; loSpin();
+    };
+  }
+  async function loSpin(){
+    const pick = LO.pick, bet = LO.bet;
+    LO.busy = true; LO.shown = 0; LO.summary = '';
+    LO.res = Array.from({length:LO.PRIZES}, () => 1 + Math.floor(Math.random() * 99));   // mỗi giải một lần random riêng
+    player.coins -= bet; UI.updateHUD(player); loBalance(); loLock(true);
+    for(let i = 0; i < LO.PRIZES; i++){ const el = loQ('#loB' + i); if(el){ el.className = 'lo-box'; el.lastChild.textContent = '··'; } }
+    const sum = t => { LO.summary = t; const el = loQ('#loSum'); if(el) el.textContent = t; };
+    sum('Đang quay…');
+    let hits = 0;
+    for(let i = 0; i < LO.PRIZES; i++){          // quay lần lượt từng giải
+      const t0 = performance.now();
+      while(performance.now() - t0 < 450){
+        const el = loQ('#loB' + i); if(el){ el.classList.add('spin'); el.lastChild.textContent = two(1 + Math.floor(Math.random() * 99)); }
+        await wait(55);
+      }
+      const v = LO.res[i], hit = v === pick; if(hit) hits++;
+      LO.shown = i + 1;
+      const el = loQ('#loB' + i); if(el){ el.classList.remove('spin'); el.classList.toggle('hit', hit); el.lastChild.textContent = two(v); }
+      if(hits) sum(`Trúng ${hits} giải → ×${hits * LO.MULT}`);
+      await wait(120);
+    }
+    const win = bet * LO.MULT * hits;
+    player.coins += win; UI.updateHUD(player); loBalance();
+    LO.busy = false; loLock(false);
+    if(hits){ sum(`🎉 Trúng ${hits} giải (×${hits * LO.MULT}) → +${nf(win)} xu`); UI.toast(`🎉 Đánh lô trúng ${hits} giải! +${nf(win)} xu`); }
+    else { sum(`Trượt rồi, mất ${nf(bet)} xu`); UI.toast('Đánh lô trượt, chúc may mắn lần sau!'); }
+  }
 
   function showGamePanel(title){
     document.querySelectorAll('.panel').forEach(p=>p.classList.add('hidden'));
@@ -161,6 +207,7 @@ const Park = (() => {
   }
   function openGame(id){
     const g = MG[id]; if(!g) return;
+    if(g.custom){ g.start(showGamePanel(g.name)); return; }
     if(player.coins < g.fee){ UI.toast(`Cần ${g.fee}🪙 để chơi`); return; }
     player.coins -= g.fee; UI.updateHUD(player);
     const body = showGamePanel(g.name);
@@ -170,13 +217,6 @@ const Park = (() => {
       $('mgAgain').onclick = ()=> openGame(id);
     });
   }
-  function openMenu(){
-    const body = showGamePanel('🎮 Mini game');
-    body.innerHTML = Object.keys(MG).map(id=>`<button class="shop-item" data-g="${id}">${MG[id].name} — ${MG[id].fee}🪙</button>`).join('')
-      + '<div class="mg-info">Hoặc đứng lên ô phát sáng trong công viên rồi bấm E.</div>';
-    body.querySelectorAll('[data-g]').forEach(btn=> btn.onclick = ()=> openGame(btn.dataset.g));
-  }
-
   function init(p){
     player = p; frame = $('tvFrame');
     frame.style.width = FW + 'px'; frame.style.height = FH + 'px';
@@ -185,5 +225,5 @@ const Park = (() => {
     $('tvStop').onclick = stopVideo;
   }
 
-  return { init, update, openRace, openGame, openMenu, matrix3d, parseYT };
+  return { init, update, openRace, openGame, matrix3d, parseYT };
 })();

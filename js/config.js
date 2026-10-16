@@ -22,6 +22,6 @@ const GCITY_CONFIG = {
     runSpeed: 280,
     playerName: "Player",
     defaultZone: "plaza",
-    botCount: 2              // số bot mô phỏng người chơi khi offline
+    botCount: 0              // 0 = không có bot (đặt >0 nếu muốn bot mô phỏng người chơi khi offline)
   }
 };

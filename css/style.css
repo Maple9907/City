@@ -193,9 +193,6 @@ input { font-family:inherit; outline:none; }
 .mg-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
 .mg-card { aspect-ratio:1; font-size:26px; background:#1e1e30; color:#fff; border-radius:10px; }
 .mg-card.up { background:#2a3a5e; }
-.mg-bar { position:relative; height:36px; background:#1e1e30; border-radius:8px; margin:12px 0; overflow:hidden; }
-.mg-zone { position:absolute; left:38%; width:24%; top:0; bottom:0; background:rgba(76,175,80,.55); }
-.mg-mark { position:absolute; top:0; bottom:0; width:4px; background:#ffd700; transform:translateX(-50%); }
 .mg-result { text-align:center; font-size:18px; line-height:1.8; margin-bottom:10px; }
 
 /* ===== Look kiểu Gaubong ===== */
@@ -214,3 +211,22 @@ body .hud-bottom{top:104px;gap:8px}
 body .action-btn{width:44px;height:44px}
 body .action-btn.on{background:#3b6fa0}
 .fps{position:absolute;right:12px;bottom:10px;color:#2b3a45;font:600 14px sans-serif;pointer-events:none;z-index:20}
+
+
+/* ===== Đánh lô ===== */
+.lo-bal{ display:flex; justify-content:space-between; align-items:center; background:#1e1e30; border-radius:10px; padding:10px 12px; margin-bottom:6px; font-size:14px; color:#aaa; }
+.lo-bal b{ color:#ffd700; font-size:16px; }
+.lo-rule{ font-size:12px; color:#8a8aa6; margin:6px 0; text-align:center; }
+.lo-row{ display:grid; grid-template-columns:1fr 2fr; gap:10px; }
+.lo-row label{ font-size:13px; color:#ccc; }
+.lo-row .mg-input{ margin:4px 0 0; font-size:18px; font-weight:600; }
+.lo-row .mg-input:disabled, #loGo:disabled{ opacity:.55; }
+.lo-title{ font-size:13px; color:#aaa; margin:10px 0 6px; }
+.lo-grid{ display:grid; grid-template-columns:repeat(5,1fr); gap:6px; }
+.lo-box{ background:#1e1e30; border:1px solid #2a2a44; border-radius:10px; padding:6px 0; text-align:center; transition:background .2s, border-color .2s; }
+.lo-box small{ display:block; font-size:10px; color:#8a8aa6; }
+.lo-box b{ display:block; font-size:20px; color:#fff; line-height:1.5; font-variant-numeric:tabular-nums; }
+.lo-box.spin b{ color:#8fd0f5; }
+.lo-box.hit{ background:#1f4d36; border-color:#4ade80; }
+.lo-box.hit b{ color:#4ade80; }
+#loSum{ min-height:18px; font-size:14px; color:#ffd700; }

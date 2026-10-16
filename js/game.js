@@ -89,17 +89,19 @@
     Net.getPlayers().forEach(ensureOtherMesh);
     // NPC đứng ở các điểm tương tác: [tên, giới tính, kiểu, x, z, hướng mặt, câu chào]
     npcs = [
-      ['🎟 Út Cá Cược','female',1,35,-1.5,-Math.PI/2,'Chọn bạn thú đi, về nhất ăn x3.5 nha! 🐎'],
+      ['🎟 Út Cá Cược','female',1,35,-1.5,-Math.PI/2,'Chọn bạn thú đi, về nhất ăn x3.5 nha! 🐎','race'],
       ['🚗 Tài Xế Chớp Nhoáng','male',2,-35,0,Math.PI/2,'Xe hay máy bay? Bay luôn cho nhanh! ✈'],
       ['🍿 Bắp Rang Bự','male',4,-4,-28.8,0,'Bắp rang nóng giòn, phim hay chờ sẵn! 🍿'],
       ['🎣 Sáu Cần Câu','female',2,-22.5,9.5,Math.PI/2,'Cá cắn câu rồi kìa, mua mồi đi bạn! 🎣'],
       ['🎰 Bảy Vé Số','male',1,23.5,-22.5,0,'Số đẹp đây, thử vận may nào! 🍀'],
       ['🍕 Chị Pizza Nóng','female',4,22.5,-8,-Math.PI/2,'Pizza ra lò, vừa thổi vừa ăn nè! 🍕'],
       ['🛒 Tú Tạp Hóa','male',5,-20.5,-22.5,0,'Tạp hóa Sunny, cần gì cũng có! 🛒'],
-    ].map(([name,g,c,x,z,f,line])=>{
+      ['🃏 Mèo Lật Bài','female',0,-9.2,0,Math.PI/2,'Lật cặp giống nhau, thắng xu liền tay! 🃏','memory'],
+      ['🎟 Chú Ba Đánh Lô','male',0,3,13.4,Math.atan2(-3,-13.4),'Chọn số đi con, 10 giải quay liền! 🎟','lo'],
+    ].map(([name,g,c,x,z,f,line,act])=>{
       const m = Scene3D.createCharacter(g, c, name, false);
       m.position.set(x, 0, z); m.userData.face = f; Scene3D.scene.add(m);
-      return { m, line, x, z, home:f, cd:0, wv:0 };
+      return { m, line, x, z, home:f, cd:0, wv:0, act };
     });
     Net.onPlayerJoin(p=>{ ensureOtherMesh(p); UI.renderPlayers(Net.getPlayers()); });
     Net.onPlayerLeave(id=>{ if(otherMeshes[id]){ Scene3D.scene.remove(otherMeshes[id]); delete otherMeshes[id]; } UI.renderPlayers(Net.getPlayers()); });
@@ -131,11 +133,10 @@
       Scene3D.scene.remove(old); Scene3D.scene.add(nm); playerMesh = nm; UI.toast('Đã đổi nhân vật');
     };
     $('btnRun').onclick = ()=>{ input.run = !input.run; $('btnRun').classList.toggle('on', input.run); };
-    $('btnCam').addEventListener('click', ()=> UI.toast('🎥 ' + Scene3D.setCamView()));
     Park.init(player);
     UI.updateHUD(player);
     UI.renderPlayers(Net.getPlayers());
-    UI.addChat('Hệ thống', `Chào mừng ${player.name} đến GCITY 3D! WASD di chuyển, vuốt/kéo chuột (hoặc phím Q/R) để xoay & nghiêng camera, chụm 2 ngón/lăn chuột để thu phóng, nút 🎥 đổi góc nhìn, E để ngồi ghế / chơi mini game / mở màn hình TV.`, true);
+    UI.addChat('Hệ thống', `Chào mừng ${player.name} đến GCITY 3D! WASD di chuyển, kéo màn hình để xoay/nghiêng camera, lăn chuột hoặc chụm 2 ngón để zoom, chạm vào ghế để ngồi (chạm chỗ khác hoặc di chuyển để đứng dậy), lại gần NPC rồi chạm vào NPC (hoặc bấm E) để chơi game.`, true);
 
     setTimeout(()=> $('loadingScreen').classList.add('hidden'), 500);
     requestAnimationFrame(loop);
@@ -211,29 +212,72 @@
   function resetFishBtn(){ const b=$('fishCastBtn'); if(b){b.textContent='Quăng cần'; b.style.background='';} }
 
   // E / chạm vào dòng gợi ý để tương tác (building, mini game, ghế, màn hình)
+  // Game chỉ chơi qua NPC: lại gần NPC rồi chạm vào NPC (mobile) hoặc bấm E (desktop). Không có chữ gợi ý.
+  const NPC_R = 5;
+  const NPC_ACT = { race:()=>Park.openRace(), memory:()=>Park.openGame('memory'), lo:()=>Park.openGame('lo') };
+  const npcDist = n => Math.hypot(playerMesh.position.x - n.x, playerMesh.position.z - n.z);
+  function nearestNpc(){
+    if(currentZone!=='plaza') return null;
+    let best = null, bd = NPC_R;
+    npcs.forEach(n=>{ const d = npcDist(n); if(n.act && d < bd){ bd = d; best = n; } });
+    return best;
+  }
+  function npcAt(cx, cy){   // NPC (đang trong tầm) gần điểm chạm nhất; dung sai 42px cho ngón tay
+    if(currentZone!=='plaza') return null;
+    const cam = Scene3D.camera, W = window.innerWidth, H = window.innerHeight; cam.updateMatrixWorld();
+    let best = null, bd = 42;
+    npcs.forEach(n=>{
+      if(!n.act || npcDist(n) > NPC_R) return;
+      const pt = y=>{ const v = new THREE.Vector3(n.x, y, n.z).project(cam); return v.z < 1 ? [(v.x+1)/2*W, (1-v.y)/2*H] : null; };
+      const a = pt(0.2), b = pt(1.9); if(!a || !b) return;
+      const abx = b[0]-a[0], aby = b[1]-a[1];
+      const t = Math.max(0, Math.min(1, ((cx-a[0])*abx + (cy-a[1])*aby) / ((abx*abx + aby*aby) || 1)));
+      const d = Math.hypot(cx - (a[0]+abx*t), cy - (a[1]+aby*t));
+      if(d < bd){ bd = d; best = n; }
+    });
+    return best;
+  }
   function interact(){
     if(!playerMesh) return;
+    const npc = nearestNpc(); if(npc){ NPC_ACT[npc.act](); return; }
     const s = Scene3D.nearSpot(currentZone, playerMesh.position.x, playerMesh.position.z);
-    if(!s) return;
+    if(!s){ const b = Scene3D.nearBench(currentZone, playerMesh.position.x, playerMesh.position.z); if(b) toggleSit(b); return; }
     if(s.kind==='building'){
       if(s.ref.type==='fishshop'){ UI.togglePanel('fishPanel'); return; }
       UI.togglePanel('shopPanel');
       UI.renderShop(s.ref.type==='cinema'?'cinema':s.ref.type==='lottery'?'lottery':'rental');
     }
-    else if(s.kind==='game') Park.openGame(s.ref.id);
     else if(s.kind==='screen') UI.togglePanel('tvPanel');
-    else if(s.kind==='race') Park.openRace();
     else if(s.kind==='vehicle'){ UI.togglePanel('shopPanel'); UI.renderShop('rental'); }
-    else if(s.kind==='bench') toggleSit(s.ref);
   }
-  function toggleSit(b){
+  function sitOn(b){
     const ud = playerMesh.userData;
-    if(ud.action==='sit'){ ud.action = null; player.action = null; return; }
     playerMesh.position.set(b.x, 0, b.z); ud.face = b.ry; ud.action = 'sit'; ud.actionT = 0; player.action = 'sit';
     player.x = b.x; player.y = b.z; Net.sendMyState({ x:b.x, y:b.z, action:'sit' });
   }
+  function standUp(){
+    const ud = playerMesh.userData;
+    if(ud.action!=='sit') return;
+    ud.action = null; player.action = null; Net.sendMyState({ x:player.x, y:player.y, action:null });
+  }
+  function toggleSit(b){ if(playerMesh.userData.action==='sit') standUp(); else sitOn(b); }
+
+  // Chạm vào ghế: đi tới + ngồi (đứng sát thì ngồi luôn). Chạm ra chỗ khác: đứng dậy / huỷ đi. Di chuyển joystick/WASD: tự đứng dậy (xử lý trong loop).
+  let walkTo = null;   // { b: ghế đích, t: thời gian đã đi, stuck: thời gian bị kẹt }
+  Scene3D.setTapHandler((cx, cy)=>{
+    if(!playerMesh) return;
+    const npc = npcAt(cx, cy); if(npc){ NPC_ACT[npc.act](); return; }
+    const sitting = playerMesh.userData.action==='sit';
+    const b = Scene3D.pickBench(cx, cy);
+    if(!b){ walkTo = null; if(sitting) standUp(); return; }
+    const d = Math.hypot(playerMesh.position.x - b.x, playerMesh.position.z - b.z);
+    if(sitting && d < 0.3) return;                     // đang ngồi đúng ghế này rồi
+    if(walkTo && walkTo.b === b) return;               // đang đi tới ghế này rồi
+    if(sitting) standUp();
+    if(d <= 1.8){ walkTo = null; sitOn(b); }
+    else walkTo = { b, t:0, stuck:0 };
+  });
   window.addEventListener('keydown', e=>{ if(e.code==='KeyE' && e.target.tagName!=='INPUT') interact(); });
-  $('interactHint').onclick = interact;
 
   // camera button
   document.addEventListener('click', e=>{
@@ -277,6 +321,27 @@
         Net.sendMyState({ x:player.x, y:player.y, action:player.action });
       }
 
+      // đang tự đi tới ghế vừa chạm (bấm joystick/WASD là huỷ)
+      if(moving) walkTo = null;
+      else if(walkTo){
+        const ud = playerMesh.userData, b = walkTo.b, px = playerMesh.position.x, pz = playerMesh.position.z;
+        const ddx = b.x - px, ddz = b.z - pz, dist = Math.hypot(ddx, ddz);
+        walkTo.t += dt;
+        if(dist < 0.8){ walkTo = null; sitOn(b); }
+        else if(walkTo.t > 12){ walkTo = null; ud.moving = false; }
+        else {
+          const sp = Math.min(dist, (input.run||speedBoost>0 ? 7 : 4) * dt), sx = ddx/dist*sp, sz = ddz/dist*sp;
+          let mv = false;
+          if(!Scene3D.collides(currentZone, px+sx, pz)){ playerMesh.position.x += sx; mv = true; }
+          if(!Scene3D.collides(currentZone, px, pz+sz)){ playerMesh.position.z += sz; mv = true; }
+          ud.moving = mv; ud.face = Math.atan2(sx, sz);
+          player.x = playerMesh.position.x; player.y = playerMesh.position.z;
+          Net.sendMyState({ x:player.x, y:player.y, action:player.action });
+          walkTo.stuck = mv ? 0 : walkTo.stuck + dt;
+          if(walkTo.stuck > 0.5){ walkTo = null; ud.moving = false; UI.toast('Có vật cản, lại gần ghế hơn nhé'); }
+        }
+      }
+
       if(speedBoost>0) speedBoost-=dt;
 
       // action timer (auto-clear non-sit)
@@ -313,7 +378,7 @@
       // zone portal
       const portal = Scene3D.atPortal(currentZone, playerMesh.position.x, playerMesh.position.z);
       if(portal){
-        currentZone = portal.to;
+        currentZone = portal.to; walkTo = null;
         Scene3D.buildZone(currentZone);
         // re-add player + others
         Scene3D.scene.add(playerMesh);
@@ -324,14 +389,6 @@
         UI.toast(`Đến ${Scene3D.getZone(currentZone).name}`);
         UI.updateHUD(player);
       }
-
-      // interact hint
-      const near = Scene3D.nearSpot(currentZone, playerMesh.position.x, playerMesh.position.z);
-      const hint = $('interactHint');
-      if(near){
-        hint.textContent = '[E] ' + (near.kind==='bench' ? (playerMesh.userData.action==='sit' ? 'Đứng dậy' : 'Ngồi') : near.label);
-        hint.classList.remove('hidden');
-      } else hint.classList.add('hidden');
 
       npcs.forEach(n=>{
         const m = n.m, ud = m.userData; m.visible = (currentZone==='plaza');

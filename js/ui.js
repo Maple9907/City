@@ -96,11 +96,7 @@ const UI = (() => {
     // bottom action buttons
     $('btnEmote').onclick = ()=> togglePanel('emotePanel');
     $('btnChat').onclick = ()=> togglePanel('chatPanel');
-    $('btnFish').onclick = ()=> togglePanel('fishPanel');
-    $('btnShop').onclick = ()=> { togglePanel('shopPanel'); renderShop('cinema'); };
     $('btnInventory').onclick = ()=> { togglePanel('inventoryPanel'); renderInventory(callbacks.getPlayer()); };
-    $('btnTV').onclick = ()=> togglePanel('tvPanel');
-    $('btnMini').onclick = ()=> Park.openMenu();
     $('btnPlayers').onclick = ()=> { togglePanel('playersPanel'); callbacks.refreshPlayers(); };
     ($('btnMap')||{}).onclick = ()=> toast('Bản đồ: Quảng trường ở giữa, đảo câu cá ở cổng tàu phía dưới.');
 
@@ -239,7 +235,7 @@ const UI = (() => {
   // ---- HUD update ----
   function updateHUD(p){
     $('hudName').textContent = p.name;
-    $('hudCoin').textContent = p.coins;
+    $('hudCoin').textContent = String(Math.floor(p.coins)).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
     $('hudZone').textContent = (Scene3D.getZone(p.zone)||{}).name || '';
     $('fishCount').textContent = p.inventory.fish;
     const bait = p.inventory.lure>0?`Mồi giả (${p.inventory.lure})`:(p.inventory.shrimp>0?`Tép (${p.inventory.shrimp})`:`Giun (${p.inventory.worm})`);
