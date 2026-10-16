@@ -134,7 +134,7 @@
     Park.init(player);
     UI.updateHUD(player);
     UI.renderPlayers(Net.getPlayers());
-    UI.addChat('Hệ thống', `Chào mừng ${player.name} đến GCITY 3D! WASD di chuyển, kéo chuột xoay camera, E để ngồi ghế / chơi mini game / mở màn hình TV.`, true);
+    UI.addChat('Hệ thống', `Chào mừng ${player.name} đến GCITY 3D! WASD di chuyển, kéo màn hình để xoay/nghiêng camera, lăn chuột hoặc chụm 2 ngón để zoom, E để ngồi ghế / chơi mini game / mở màn hình TV.`, true);
 
     setTimeout(()=> $('loadingScreen').classList.add('hidden'), 500);
     requestAnimationFrame(loop);

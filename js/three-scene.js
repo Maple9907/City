@@ -7,8 +7,15 @@ const Scene3D = (() => {
   let container;
   let worldGroup;      // group chứa zone hiện tại
   let characters = {}; // id -> {group, parts, action, actionT}
-  let camAngle = 0, camDist = 15, camHeight = 17;
-  let mouseDown = false, lastMX = 0;
+  // Camera third-person kiểu "Quảng trường Mini": xoay (yaw) + nghiêng (pitch) + zoom (dist) quanh nhân vật
+  const CAM = { fov:55, lookY:1.5, pitch0:0.5, dist0:13, minPitch:0.1, maxPitch:1.5,
+                minDist:5, maxDist:120,   // maxDist bị chặn bởi sương mù (Fog 110→260)
+                rotX:0.006, rotY:0.005, follow:0.2 };
+  const camClamp = (v,a,b)=>Math.max(a,Math.min(b,v));
+  const setCamDist = d => { camDist = camClamp(d, CAM.minDist, CAM.maxDist); };
+  let camAngle = 0, camPitch = CAM.pitch0, camDist = CAM.dist0;
+  const camTarget = new THREE.Vector3(), camPtr = new Map();
+  let camSnap = true, camLastT = 0, camLastX = 0, camLastZ = 0;
   let waterMesh = null, fountainParticles = null;
   let screenInfo = null, screenCanvas = null, screenTex = null, spinners = [];
   let ferris = null, racers = [], raceCanvas = null, raceTex = null;
@@ -82,7 +89,7 @@ const Scene3D = (() => {
     scene.background = new THREE.Color(0xbfe9f4);
     scene.fog = new THREE.Fog(0xbfe9f4, 110, 260);
 
-    camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 400);
+    camera = new THREE.PerspectiveCamera(CAM.fov, window.innerWidth/window.innerHeight, 0.1, 400);
     renderer = new THREE.WebGLRenderer({ antialias:true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.shadowMap.enabled = true;
@@ -98,11 +105,32 @@ const Scene3D = (() => {
     sun.shadow.camera.top=60; sun.shadow.camera.bottom=-60; sun.shadow.camera.far=200;
     scene.add(sun);
 
-    // camera orbit with mouse drag
-    renderer.domElement.addEventListener('mousedown', e=>{ mouseDown=true; lastMX=e.clientX; });
-    window.addEventListener('mouseup', ()=> mouseDown=false);
-    window.addEventListener('mousemove', e=>{ if(mouseDown){ camAngle -= (e.clientX-lastMX)*0.005; lastMX=e.clientX; } });
-    renderer.domElement.addEventListener('wheel', e=>{ camDist = Math.max(8, Math.min(32, camDist + e.deltaY*0.01)); }, {passive:true});
+    // camera orbit: kéo 1 ngón/chuột = xoay + nghiêng; lăn chuột / chụm 2 ngón = zoom
+    const cv = renderer.domElement;
+    cv.style.touchAction = 'none';   // chặn trình duyệt cuộn/zoom trang khi kéo trên canvas
+    cv.addEventListener('pointerdown', e=>{
+      if(e.pointerType==='mouse') camPtr.clear();
+      try{ cv.setPointerCapture(e.pointerId); }catch(_){}
+      camPtr.set(e.pointerId, [e.clientX, e.clientY]);
+    });
+    cv.addEventListener('pointermove', e=>{
+      const p = camPtr.get(e.pointerId); if(!p) return;
+      if(camPtr.size===1){
+        camAngle -= (e.clientX-p[0])*CAM.rotX;
+        camPitch = camClamp(camPitch + (e.clientY-p[1])*CAM.rotY, CAM.minPitch, CAM.maxPitch);
+      } else if(camPtr.size===2){
+        const o = [...camPtr.entries()].find(q=>q[0]!==e.pointerId)[1];
+        const d0 = Math.hypot(p[0]-o[0], p[1]-o[1]), d1 = Math.hypot(e.clientX-o[0], e.clientY-o[1]);
+        if(d1>1) setCamDist(camDist*d0/d1);
+      }
+      p[0]=e.clientX; p[1]=e.clientY;
+    });
+    const camPtrEnd = e=>{ camPtr.delete(e.pointerId); };
+    cv.addEventListener('pointerup', camPtrEnd);
+    cv.addEventListener('pointercancel', camPtrEnd);
+    cv.addEventListener('lostpointercapture', camPtrEnd);
+    window.addEventListener('blur', ()=> camPtr.clear());   // tránh kẹt trạng thái "đang kéo" khi mất focus
+    cv.addEventListener('wheel', e=>{ setCamDist(camDist*(1+(e.deltaMode===1? e.deltaY*33 : e.deltaY)*0.001)); }, {passive:true});
     window.addEventListener('resize', ()=>{
       camera.aspect = window.innerWidth/window.innerHeight; camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
@@ -494,11 +522,20 @@ const Scene3D = (() => {
   }
 
   // ===== CAMERA =====
-  function updateCamera(px, pz){
-    const cx = px + Math.sin(camAngle)*camDist;
-    const cz = pz + Math.cos(camAngle)*camDist;
-    camera.position.set(cx, camHeight, cz);
-    camera.lookAt(px, 0.8, pz);
+  function updateCamera(px, pz, py = 0){
+    const now = performance.now();
+    const dt = Math.min(0.05, (now-camLastT)/1000); camLastT = now;
+    // dịch chuyển xa (qua cổng zone, spawn lại) → đặt camera ngay, không cho "bay" xuyên map
+    if(Math.hypot(px-camLastX, pz-camLastZ) > 6) camSnap = true;
+    camLastX = px; camLastZ = pz;
+
+    const cp = Math.cos(camPitch), ly = py + CAM.lookY;
+    camTarget.set(px + Math.sin(camAngle)*cp*camDist,
+                  ly + Math.sin(camPitch)*camDist,
+                  pz + Math.cos(camAngle)*cp*camDist);
+    if(camSnap){ camera.position.copy(camTarget); camSnap = false; }
+    else camera.position.lerp(camTarget, 1 - Math.pow(1-CAM.follow, dt*60));   // = lerp .2 @60FPS, đồng đều ở mọi tần số quét
+    camera.lookAt(px, ly, pz);
   }
   function getMoveDir(){
     // trả về hướng di chuyển tương đối camera: {x, z}
