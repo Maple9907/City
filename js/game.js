@@ -629,7 +629,7 @@
         if(n.wv>0){ n.wv -= dt; if(n.wv<=0) ud.action = null; }
         Scene3D.updateCharacter(m, dt, time);
       });
-      if(!riding) Scene3D.updateCamera(playerMesh.position.x, playerMesh.position.z);
+      if(!riding) Scene3D.updateCamera(playerMesh.position.x, playerMesh.position.z, playerMesh.userData.gy||0);
       Park.update(currentZone);
       Fishing.update(dt, player, onFishEvent);
       UI.updateHUD(player);

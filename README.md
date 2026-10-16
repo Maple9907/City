@@ -43,6 +43,10 @@ Toàn bộ asset tự vẽ bằng Three.js geometry (không file ngoài). Thay b
 - Xe: joystick hoặc nút Lùi / Tiến. Máy bay: thêm **Bay lên ↑ / Hạ cánh ↓**; cánh quạt đứng yên khi đỗ, giữ "Bay lên" thì nổ máy, **cánh quạt quay dần** rồi mới cất cánh, bay thì quay hết tốc lực. Bấm "Xuống xe · 4:22" để xuống (đang bay thì tự hạ cánh trước)
 - Model xe / máy bay nằm trong `js/vehicles.js` (dùng chung cho bãi đỗ và lúc lái). Đổi giá / thời gian thuê: `PRICE`, `RENT_SEC`; đổi màu / thêm xe: `CARS`, `PLANES`
 
+## v17: gợi ý trong bảng TV rút gọn còn "Gõ từ khoá hoặc dán link youtube để tìm".
+
+## v16: nhân vật leo được bậc thang + đứng trên sân khấu TV (trước đây luôn ở y=0 nên chìm xuống nền cỏ); chỉ lên được bằng bậc thang giữa; 2 loa là vật cản.
+
 ## v15: đã xoá 2 ô vàng (Đánh lô) + hồng (Lật hình); NPC giữ nguyên.
 
 ## v14 — cây / toà nhà / ánh sáng / lưu dữ liệu
