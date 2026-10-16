@@ -591,7 +591,20 @@ const Scene3D = (() => {
   }
 
   // ===== ANIMATION (đi/chạy/ngồi/vẫy/nhảy/7 điệu nhảy + thở, chớp mắt, tóc đung đưa) =====
-  function updateCharacter(charGroup, dt, time){ GChar.update(charGroup, dt, time); }
+  // Độ cao mặt đất tại (x,z): sân khấu (sàn gỗ 22×7, cao 0.5, tâm (0,-35)) + 3 bậc thang trước sân khấu (rộng 5, mỗi bậc sâu 1: 0.45 / 0.30 / 0.15)
+  function groundY(zoneId, x, z){
+    if(zoneId!=='plaza') return 0;
+    if(Math.abs(x)<11 && z>-38.5 && z<-31.5) return 0.5;
+    if(Math.abs(x)<2.5){ if(z>=-31.5 && z<-30.5) return 0.45; if(z>=-30.5 && z<-29.5) return 0.30; if(z>=-29.5 && z<-28.5) return 0.15; }
+    return 0;
+  }
+  // GChar.update đặt lại position.y mỗi khung (nhún bước đi/nhảy/ngồi) nên cộng độ cao nền SAU nó; làm mượt để leo bậc không bị giật
+  function updateCharacter(charGroup, dt, time){
+    const ud = charGroup.userData, gy = groundY(curZoneId, charGroup.position.x, charGroup.position.z);
+    ud.gy = (ud.gy===undefined) ? gy : ud.gy + (gy-ud.gy)*Math.min(1, dt*14);
+    GChar.update(charGroup, dt, time);
+    charGroup.position.y += ud.gy;
+  }
 
   // ===== CAMERA =====
   function updateCamera(px, pz, py = 0){
@@ -626,6 +639,12 @@ const Scene3D = (() => {
     if(z.fountain && Math.hypot(x-z.fountain.x, zpos-z.fountain.z)<Fountain.RADIUS+r) return true;
     if(z.screen && Math.abs(x-z.screen.x)<z.screen.w/2+r && Math.abs(zpos-z.screen.z)<1.2+r) return true;
     if(zoneId==='plaza' && Math.hypot(x,zpos)>53) return true;
+    if(zoneId==='plaza'){   // sân khấu: chỉ lên được bằng bậc thang giữa (rộng ~5), không chui qua mép; loa 2 bên là vật cản
+      const ax=Math.abs(x);
+      const inOuter = ax<11.4 && zpos>-38.9 && zpos<-31.1, inInner = ax<10.6 && zpos>-38.1 && zpos<-31.9;
+      if(inOuter && !inInner && !(ax<2.6 && zpos>-31.9)) return true;
+      if(Math.abs(ax-10.5)<0.55+r && Math.abs(zpos+36)<0.5+r) return true;
+    }
     if(z.race && Math.hypot(x-z.race.x, Math.max(Math.abs(zpos-z.race.z)-z.race.hs,0)) < z.race.ro+r) return true;
     if(z.wheel && Math.hypot(x-z.wheel.x,zpos-z.wheel.z)<z.wheel.r+r) return true;
     if(z.water){ const w=z.water; if(Math.abs(x-w.x)<w.w/2 && Math.abs(zpos-w.z)<w.d/2 && zpos>w.z-w.d/2+2) return true; }
@@ -731,5 +750,5 @@ const Scene3D = (() => {
 
   return { init, buildZone, createCharacter, setChatBubble, updateCharacter,
     updateCamera, getMoveDir, collides, atPortal, nearBuilding, atDock, render, nearSpot, pickBench, nearBench, setTapHandler, setScreenText, screenCorners2D, setRacers, setRaceBoard, getLotSlots, setLotTaken, setLotBadgeVisible, lotText,
-    getZone, CHAR_DEFS, get scene(){return scene;}, get camera(){return camera;}, get pixelRatio(){return RES.cur;} };
+    getZone, groundY, CHAR_DEFS, get scene(){return scene;}, get camera(){return camera;}, get pixelRatio(){return RES.cur;} };
 })();
