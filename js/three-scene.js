@@ -91,6 +91,7 @@ const Scene3D = (() => {
 
     camera = new THREE.PerspectiveCamera(CAM.fov, window.innerWidth/window.innerHeight, 0.1, 400);
     renderer = new THREE.WebGLRenderer({ antialias:true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));   // nét trên màn retina, chặn ở 2 để giữ FPS
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
