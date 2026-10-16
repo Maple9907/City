@@ -5,8 +5,18 @@ const UI = (() => {
   let selectedGender = 'male', selectedChar = 0;
   let onEnterGame = null, onChatSend = null, onEmote = null, onAction = null;
   let toastTimer = null;
+  let _guardUntil = 0;   // chặn click "lạc" vào panel ngay sau khi chạm NPC mở panel (ghost click)
 
   function $(id){ return document.getElementById(id); }
+  // Chặn mọi click vào bất kỳ panel nào trong 500ms tới — tránh trường hợp ngón tay vừa chạm
+  // vào NPC mở menu thì ngay lập tức "nhấn" luôn nút bên trong (đánh lô tự quay, đua thú tự mua vé…).
+  function guardTap(){ _guardUntil = Date.now() + 500; }
+  document.addEventListener('click', e=>{
+    if(!_guardUntil || Date.now() >= _guardUntil) return;
+    if(e.target && e.target.closest && e.target.closest('.panel')){
+      e.stopPropagation(); e.stopImmediatePropagation(); e.preventDefault();
+    }
+  }, true);
 
   // ---- Loading ----
   function setLoading(pct, text){
@@ -158,24 +168,11 @@ const UI = (() => {
     hist.scrollTop = hist.scrollHeight;
   }
 
-  // ---- Shop content (cinema/lottery/rental) ----
+  // ---- Shop content (lottery / rental) — rạp phim đã bỏ, mỗi NPC mở đúng dịch vụ của mình ----
   function renderShop(tab){
+    if(tab==='cinema') tab = 'rental';
     const c = $('shopContent');
-    if(tab==='cinema'){
-      c.innerHTML = `
-        <div class="shop-service">
-          <h4>🎬 Phim chiếu hôm nay</h4>
-          <p>City Adventure 3D - 90 phút. Vé: 20🪙</p>
-          <button class="btn-primary" id="buyCinema">Mua vé (20🪙)</button>
-        </div>
-        <div class="shop-service">
-          <h4>🍿 Combo bắp nước</h4>
-          <p>Xem phim có bắp ngon hơn. Giá: 15🪙</p>
-          <button class="btn-secondary" id="buyCombo">Mua combo (15🪙)</button>
-        </div>`;
-      $('buyCinema').onclick = ()=> onAction('buyCinema');
-      $('buyCombo').onclick = ()=> onAction('buyCombo');
-    } else if(tab==='lottery'){
+    if(tab==='lottery'){
       c.innerHTML = `
         <div class="shop-service">
           <h4>🎰 Vé số City</h4>
@@ -191,9 +188,14 @@ const UI = (() => {
     } else if(tab==='rental'){
       c.innerHTML = `
         <div class="shop-service">
-          <h4>🛵 Xe máy (tăng tốc 60s)</h4>
-          <p>Di chuyển nhanh hơn trong thành phố. Giá: 30🪙</p>
-          <button class="btn-primary" id="rentBike">Thuê xe (30🪙)</button>
+          <h4>🛵 Xe máy (ngồi lái thật)</h4>
+          <p>Nhân vật ngồi lên xe, điều khiển bằng joystick. Thuê 5 phút. Giá: 50🪙</p>
+          <button class="btn-primary" id="rentBikeReal">Thuê xe máy (50🪙)</button>
+        </div>
+        <div class="shop-service">
+          <h4>✈️ Máy bay (bay được)</h4>
+          <p>Ngồi lên máy bay, có nút Bay lên / Hạ cánh / Lùi / Tiến, cánh quạt xoay khi bay. Thuê 5 phút. Giá: 150🪙</p>
+          <button class="btn-primary" id="rentPlane">Thuê máy bay (150🪙)</button>
         </div>
         <div class="shop-service">
           <h4>🎿 Giày trượt (tăng tốc 30s)</h4>
@@ -205,7 +207,8 @@ const UI = (() => {
           <p>Tăng tỉ lệ cá lớn. Giá: 100🪙</p>
           <button class="btn-secondary" id="buyRod">Mua cần (100🪙)</button>
         </div>`;
-      $('rentBike').onclick = ()=> onAction('rentBike');
+      $('rentBikeReal').onclick = ()=> onAction('rentVehicle', { type:'bike' });
+      $('rentPlane').onclick = ()=> onAction('rentVehicle', { type:'plane' });
       $('rentSkate').onclick = ()=> onAction('rentSkate');
       $('buyRod').onclick = ()=> onAction('buyRod');
     }
@@ -293,5 +296,5 @@ const UI = (() => {
 
   return { setLoading, hideLoading, initCharSelect, showCharSelect, hideCharSelect,
     togglePanel, closePanel, openPanel, openShop, initPanels, addChat, updateHUD, toast, initJoystick,
-    renderInventory, renderPlayers, renderShop };
+    renderInventory, renderPlayers, renderShop, guardTap };
 })();

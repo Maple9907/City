@@ -5,6 +5,18 @@
   let otherMeshes = {}, npcs = [];     // id -> THREE.Group
   let input = { keys:{}, joy:{x:0,y:0}, run:false };
   let speedBoost = 0;
+  let riding = null;   // {type:'bike'|'plane', v:THREE.Group, prop, wheels, yaw, alt, targetAlt, remain, seatH, maxSpeed, autoDescend}
+  const vInput = { fwd:false, back:false, up:false, down: false };
+  // ===== Lưu dữ liệu người chơi (localStorage) =====
+  const Save = {
+    key: 'gcity_save_v1',
+    load(){ try{ const s = JSON.parse(localStorage.getItem(this.key)); return (s && s.name && s.gender) ? s : null; }catch(e){ return null; } },
+    write(d){ try{ localStorage.setItem(this.key, JSON.stringify(d)); }catch(e){} },
+    clear(){ try{ localStorage.removeItem(this.key); }catch(e){} }
+  };
+  let curChar = null, saveT = 0;
+  function saveNow(){ if(!curChar || !player) return; Save.write({ name:curChar.name, gender:curChar.gender, charIndex:curChar.charIndex, coins:player.coins, inventory:player.inventory }); }
+  window.addEventListener('beforeunload', saveNow);
   let currentZone = 'plaza';
 
   function $(id){ return document.getElementById(id); }
@@ -26,7 +38,7 @@
   let step=0;
   const loadTimer = setInterval(()=>{
     if(step<loadSteps.length){ UI.setLoading(loadSteps[step][0], loadSteps[step][1]); step++; }
-    else { clearInterval(loadTimer); UI.hideLoading(); UI.showCharSelect(); }
+    else { clearInterval(loadTimer); UI.hideLoading(); const sv=Save.load(); if(sv){ enterGame({name:sv.name, gender:sv.gender, charIndex:sv.charIndex||0, _save:sv}); } else UI.showCharSelect(); }
   }, 400);
 
   // Override renderCharGrid cho 3D (dùng màu đơn giản trên canvas)
@@ -56,7 +68,7 @@
     });
   };
 
-  UI.initCharSelect(async (charData)=>{
+  async function enterGame(charData){
     try {
     UI.hideCharSelect();
     $('loadingScreen').classList.remove('hidden');
@@ -69,6 +81,12 @@
 
     const spawn = zone.spawn;
     player = Player.create({ id:'me', name:charData.name, gender:charData.gender, charIndex:charData.charIndex, x:spawn.x, y:0 });
+    const sv = charData._save;
+    if(sv){
+      player.coins = typeof sv.coins==='number' ? sv.coins : GCITY_CONFIG.GAME.startCoins;
+      player.inventory = Object.assign({worm:10,shrimp:0,lure:0,fish:0,rod:1,ticket:0}, sv.inventory||{});
+    }
+    curChar = { name:charData.name, gender:charData.gender, charIndex:charData.charIndex };
     player.zone = 'plaza';
     playerMesh = Scene3D.createCharacter(charData.gender, charData.charIndex, charData.name, true);
     playerMesh.position.set(spawn.x, 0, spawn.z);
@@ -91,7 +109,6 @@
     npcs = [
       ['🎟 Út Cá Cược','female',1,31.9,-1.5,-Math.PI/2,'7 bạn thú ra sân! Cược 1 ăn 6, chọn con nào đây? 🐎','race'],
       ['🚗 Tài Xế Chớp Nhoáng','male',2,-35,0,Math.PI/2,'Xe hay máy bay? Bay luôn cho nhanh! ✈','rental'],
-      ['🍿 Bắp Rang Bự','male',4,-4,-28.8,0,'Bắp rang nóng giòn, phim hay chờ sẵn! 🍿','cinema'],
       ['🎣 Sáu Cần Câu','female',2,-22.5,9.5,Math.PI/2,'Cá cắn câu rồi kìa, mua mồi đi bạn! 🎣','fish'],
       ['🎰 Bảy Vé Số','male',1,23.5,-22.5,0,'Số đẹp đây, thử vận may nào! 🍀','lottery'],
       ['🍕 Chị Pizza Nóng','female',4,22.5,-8,-Math.PI/2,'Pizza ra lò, vừa thổi vừa ăn nè! 🍕'],
@@ -127,13 +144,41 @@
       refreshPlayers: ()=> UI.renderPlayers(Net.getPlayers()),
     });
     UI.initJoystick(j=> input.joy = j);
-    let ci = charData.charIndex, gd = charData.gender;
-    $('btnChar').onclick = ()=>{
-      ci++; if(ci >= Scene3D.CHAR_DEFS[gd].length){ ci = 0; gd = gd==='male' ? 'female' : 'male'; }
-      const old = playerMesh, nm = Scene3D.createCharacter(gd, ci, player.name, true);
-      nm.position.copy(old.position); nm.userData.face = old.userData.face;
-      Scene3D.scene.remove(old); Scene3D.scene.add(nm); playerMesh = nm; UI.toast('Đã đổi nhân vật');
-    };
+    function bindEnterDefault(){
+      $('enterGameBtn').onclick = ()=>{
+        const name = $('charName').value.trim() || 'Player';
+        enterGame({ name, gender: UI._gender, charIndex: UI._charIdx });
+      };
+    }
+    function openCharSwitch(){
+      if(riding){ UI.toast('Hãy xuống xe trước khi đổi nhân vật!'); return; }
+      // khoá giới tính: chỉ hiện nhân vật cùng giới với nhân vật đang dùng
+      document.querySelectorAll('.gender-tab').forEach(t=>{ t.style.display='none'; });
+      UI._gender = curChar.gender; UI._charIdx = curChar.charIndex;
+      UI.renderCharGrid3D();
+      $('charName').value = curChar.name;
+      $('enterGameBtn').textContent = 'Đổi nhân vật';
+      $('charSelect').classList.remove('hidden');
+      $('enterGameBtn').onclick = ()=>{
+        const name = $('charName').value.trim() || curChar.name;
+        const gd = UI._gender, ci = UI._charIdx;
+        const old = playerMesh, nm = Scene3D.createCharacter(gd, ci, name, true);
+        nm.position.copy(old.position); nm.userData.face = old.userData.face;
+        nm.userData.action = old.userData.action; nm.userData.moving = old.userData.moving;
+        Scene3D.scene.remove(old); Scene3D.scene.add(nm); playerMesh = nm;
+        player.name = name; player.gender = gd; player.charIndex = ci;
+        curChar = { name, gender:gd, charIndex:ci };
+        $('hudName').textContent = name;
+        $('charSelect').classList.add('hidden');
+        $('enterGameBtn').textContent = 'Vào thành phố';
+        document.querySelectorAll('.gender-tab').forEach(t=>{ t.style.display=''; });
+        UI._gender = 'male'; UI._charIdx = 0; UI.renderCharGrid3D();
+        bindEnterDefault();
+        UI.toast('Đã đổi nhân vật');
+        saveNow();
+      };
+    }
+    $('btnChar').onclick = openCharSwitch;
     $('btnRun').onclick = ()=>{ input.run = !input.run; $('btnRun').classList.toggle('on', input.run); };
     Park.init(player);
     UI.updateHUD(player);
@@ -151,7 +196,8 @@
         : ('Lỗi: ' + e.message);
       console.error(e);
     }
-  });
+  }
+  UI.initCharSelect(enterGame);
 
   // patch UI initCharSelect để dùng renderCharGrid3D
   const origInit = UI.initCharSelect;
@@ -200,6 +246,13 @@
     }
     else if(type==='rentBike'){ if(player.coins<30){UI.toast('Không đủ 30🪙!');return;} player.coins-=30; speedBoost=60; UI.toast('🛵 Xe máy 60s!'); UI.updateHUD(player); }
     else if(type==='rentSkate'){ if(player.coins<15){UI.toast('Không đủ 15🪙!');return;} player.coins-=15; speedBoost=Math.max(speedBoost,30); UI.toast('🎿 Giày trượt 30s!'); UI.updateHUD(player); }
+    else if(type==='rentVehicle'){
+      const price = data.type==='plane' ? 150 : 50;
+      if(riding){ UI.toast('Bạn đang ngồi trên xe rồi!'); return; }
+      if(player.coins<price){ UI.toast(`Không đủ ${price}🪙!`); return; }
+      player.coins -= price; UI.updateHUD(player);
+      mountVehicle(data.type);
+    }
     else if(type==='buyRod'){ if(player.coins<100){UI.toast('Không đủ 100🪙!');return;} if(player.inventory.rod>=2){UI.toast('Đã có cần cao cấp!');return;} player.coins-=100; player.inventory.rod=2; UI.toast('🎣 Cần nâng cấp!'); UI.updateHUD(player); }
   }
   function onFishEvent(ev){
@@ -269,8 +322,8 @@
   // Chạm vào ghế: đi tới + ngồi (đứng sát thì ngồi luôn). Chạm ra chỗ khác: đứng dậy / huỷ đi. Di chuyển joystick/WASD: tự đứng dậy (xử lý trong loop).
   let walkTo = null;   // { b: ghế đích, t: thời gian đã đi, stuck: thời gian bị kẹt }
   Scene3D.setTapHandler((cx, cy)=>{
-    if(!playerMesh) return;
-    const npc = npcAt(cx, cy); if(npc){ NPC_ACT[npc.act](); return; }
+    if(!playerMesh || riding) return;
+    const npc = npcAt(cx, cy); if(npc){ UI.guardTap(); NPC_ACT[npc.act](); return; }
     const sitting = playerMesh.userData.action==='sit';
     const b = Scene3D.pickBench(cx, cy);
     if(!b){ walkTo = null; if(sitting) standUp(); return; }
@@ -288,6 +341,155 @@
     if(e.target.id==='btnCam'){ /* toggle cam handled by drag already */ }
   });
 
+  // ===== Xe / máy bay thuê (nhân vật ngồi lên thật, điều khiển được) =====
+  function buildVehicle(type){
+    const g = new THREE.Group();
+    const mat = c => new THREE.MeshLambertMaterial({color:c});
+    if(type==='bike'){
+      const red = mat(0xe74c3c), dark = mat(0x222222), metal = mat(0x95a5a6);
+      const wGeo = new THREE.CylinderGeometry(0.34,0.34,0.16,16); wGeo.rotateZ(Math.PI/2);
+      const wheels = [];
+      [0.72, -0.72].forEach(z=>{
+        const w = new THREE.Mesh(wGeo, dark); w.position.set(0,0.34,z); g.add(w); wheels.push(w);
+      });
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.45,0.35,1.3), red); body.position.set(0,0.58,0); g.add(body);
+      const seat = new THREE.Mesh(new THREE.BoxGeometry(0.5,0.14,0.55), dark); seat.position.set(0,0.82,-0.15); g.add(seat);
+      const front = new THREE.Mesh(new THREE.BoxGeometry(0.4,0.3,0.35), red); front.position.set(0,0.62,0.62); g.add(front);
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(0.6,0.06,0.06), metal); bar.position.set(0,1.0,0.66); g.add(bar);
+      const head = new THREE.Mesh(new THREE.BoxGeometry(0.2,0.15,0.1), mat(0xfff3a0)); head.position.set(0,0.95,0.78); g.add(head);
+      g.userData = { wheels, seatH:0.92, maxSpeed:11 };
+    } else {
+      const blue = mat(0x5aa9e0), blueD = mat(0x3d7fb5), dark = mat(0x222222);
+      const fuseGeo = new THREE.CylinderGeometry(0.34,0.4,2.3,12); fuseGeo.rotateX(Math.PI/2);
+      const fuse = new THREE.Mesh(fuseGeo, blue); fuse.position.set(0,0.85,0); g.add(fuse);
+      const nose = new THREE.Mesh(new THREE.ConeGeometry(0.34,0.5,12), blueD); nose.geometry.rotateX(Math.PI/2); nose.position.set(0,0.85,1.35); g.add(nose);
+      const wing = new THREE.Mesh(new THREE.BoxGeometry(4.6,0.08,0.95), blue); wing.position.set(0,0.82,0.1); g.add(wing);
+      const tipL = new THREE.Mesh(new THREE.BoxGeometry(0.3,0.12,0.95), mat(0xe74c3c)); tipL.position.set(-2.3,0.82,0.1); g.add(tipL);
+      const tipR = new THREE.Mesh(new THREE.BoxGeometry(0.3,0.12,0.95), mat(0x2ecc71)); tipR.position.set(2.3,0.82,0.1); g.add(tipR);
+      const hTail = new THREE.Mesh(new THREE.BoxGeometry(1.7,0.06,0.45), blueD); hTail.position.set(0,1.0,-1.05); g.add(hTail);
+      const vTail = new THREE.Mesh(new THREE.BoxGeometry(0.07,0.65,0.5), blueD); vTail.position.set(0,1.25,-1.05); g.add(vTail);
+      const sGeo = new THREE.BoxGeometry(0.42,0.12,0.4);
+      const seat1 = new THREE.Mesh(sGeo, dark); seat1.position.set(0,1.02,0.25); g.add(seat1);
+      const seat2 = new THREE.Mesh(sGeo, dark); seat2.position.set(0,1.02,-0.25); g.add(seat2);
+      const wGeo = new THREE.CylinderGeometry(0.22,0.22,0.12,12); wGeo.rotateZ(Math.PI/2);
+      [-0.5,0.5].forEach(x=>{ const w=new THREE.Mesh(wGeo,dark); w.position.set(x,0.22,0.2); g.add(w); });
+      const wn = new THREE.Mesh(wGeo,dark); wn.position.set(0,0.22,0.95); g.add(wn);
+      // cánh quạt ở mũi máy bay, xoay quanh trục dọc thân (trục Z local)
+      const prop = new THREE.Group(); prop.position.set(0,0.85,1.62);
+      prop.add(new THREE.Mesh(new THREE.BoxGeometry(0.1,1.5,0.06), dark));
+      prop.add(new THREE.Mesh(new THREE.BoxGeometry(1.5,0.1,0.06), dark));
+      const spinner = new THREE.Mesh(new THREE.ConeGeometry(0.12,0.25,10), mat(0xcccccc)); spinner.geometry.rotateX(Math.PI/2); spinner.position.z=0.14; prop.add(spinner);
+      g.add(prop);
+      g.userData = { wheels:[], prop, seatH:1.05, maxSpeed:13 };
+    }
+    return g;
+  }
+  function mountVehicle(type){
+    if(riding){ UI.toast('Bạn đang ngồi trên xe rồi!'); return; }
+    const v = buildVehicle(type);
+    const yaw = playerMesh.userData.face || 0;
+    v.position.set(playerMesh.position.x, 0, playerMesh.position.z);
+    v.rotation.y = yaw;
+    Scene3D.scene.add(v);
+    const ud = v.userData;
+    riding = { type, v, prop: ud.prop||null, wheels: ud.wheels||[], yaw, alt:0, targetAlt:0,
+               remain:300, seatH: ud.seatH, maxSpeed: ud.maxSpeed, autoDescend:false };
+    playerMesh.userData.moving = false; playerMesh.userData.action = null; player.action = null;
+    walkTo = null; speedBoost = 0;
+    document.querySelectorAll('.panel').forEach(p=>p.classList.add('hidden'));
+    const hud = $('vehicleHud'); hud.classList.remove('hidden');
+    hud.classList.toggle('bike-mode', type==='bike');
+    $('rentTimer').textContent = 'Xuống xe · 5:00';
+    UI.toast(type==='plane' ? '✈️ Đã lên máy bay! Giữ "Bay lên ↑" để cất cánh.' : '🛵 Đã lên xe! Dùng joystick lái, bấm "Xuống xe" để xuống.');
+  }
+  function dismountVehicle(){
+    if(!riding) return;
+    const v = riding.v, yaw = riding.yaw;
+    Scene3D.scene.remove(v);
+    playerMesh.position.set(v.position.x, 0, v.position.z);
+    playerMesh.userData.face = yaw; playerMesh.userData.moving = false;
+    playerMesh.userData.action = null; player.action = null;
+    player.x = v.position.x; player.y = v.position.z;
+    try{ Net.sendMyState({x:player.x, y:player.y, action:null}); }catch(e){}
+    riding = null;
+    $('vehicleHud').classList.add('hidden');
+    Object.keys(vInput).forEach(k=>vInput[k]=false);
+    document.querySelectorAll('.vbtn').forEach(b=>b.classList.remove('hold'));
+    UI.toast('Đã xuống xe.');
+  }
+  function updateRiding(dt){
+    const r = riding; if(!r) return;
+    let thr = -input.joy.y;
+    if(vInput.fwd) thr += 1; if(vInput.back) thr -= 1;
+    if(input.keys['KeyW']||input.keys['ArrowUp']) thr += 1;
+    if(input.keys['KeyS']||input.keys['ArrowDown']) thr -= 1;
+    thr = Math.max(-1, Math.min(1, thr));
+    let steer = input.joy.x;
+    if(input.keys['KeyA']||input.keys['ArrowLeft']) steer -= 1;
+    if(input.keys['KeyD']||input.keys['ArrowRight']) steer += 1;
+    steer = Math.max(-1, Math.min(1, steer));
+    const isPlane = r.type==='plane';
+    if(isPlane){
+      if(r.autoDescend){ r.targetAlt = 0; if(thr < 0.4) thr = 0.4; }
+      else {
+        if(vInput.up) r.targetAlt += 9*dt;
+        if(vInput.down) r.targetAlt -= 9*dt;
+        r.targetAlt = Math.max(0, Math.min(22, r.targetAlt));
+      }
+      r.alt += (r.targetAlt - r.alt) * Math.min(1, dt*2.5);
+      if(r.alt < 0.05) r.alt = 0;
+    }
+    const airborne = isPlane && r.alt > 0.5;    // đã rời đất (vẫn có thể đâm vào công trình nếu bay thấp)
+    const overBuildings = isPlane && r.alt > 10; // bay cao hơn nóc tòa nhà -> không va chạm gì cả
+    let speed = thr * r.maxSpeed;
+    if(airborne && speed < 5) speed = 5;   // máy bay đang bay không đứng yên được
+    r.yaw += steer * dt * 2.4 * (0.25 + Math.min(1, Math.abs(speed)/7));
+    const nx = r.v.position.x + Math.sin(r.yaw)*speed*dt;
+    const nz = r.v.position.z + Math.cos(r.yaw)*speed*dt;
+    let x = r.v.position.x, z = r.v.position.z;
+    if(!overBuildings){
+      if(!Scene3D.collides(currentZone, nx, r.v.position.z)) x = nx;
+      if(!Scene3D.collides(currentZone, x, nz)) z = nz;
+    } else {
+      const L = 54;
+      x = Math.max(-L, Math.min(L, nx)); z = Math.max(-L, Math.min(L, nz));
+    }
+    r.v.position.set(x, r.alt, z);
+    r.v.rotation.y = r.yaw;
+    if(r.prop){ const sp = airborne ? 55 : (Math.abs(speed)>0.5 || r.autoDescend ? 18 : 6); r.prop.rotation.z += sp*dt; }
+    r.wheels.forEach(w=>{ w.rotation.x += speed*dt/0.34; });
+    player.x = x; player.y = z;
+    Scene3D.updateCamera(x, z, r.alt);
+    r.remain -= dt;
+    const mm = Math.max(0, Math.floor(r.remain/60)), ss = Math.max(0, Math.floor(r.remain%60));
+    const rt = $('rentTimer'); if(rt) rt.textContent = `Xuống xe · ${mm}:${String(ss).padStart(2,'0')}`;
+    if(r.remain <= 0 && !r.autoDescend){
+      r.autoDescend = true;
+      if(!isPlane || r.alt < 0.6){ dismountVehicle(); return; }
+      UI.toast('Hết giờ thuê, tự động hạ cánh…');
+    }
+    if(r.autoDescend && (!isPlane || r.alt < 0.35)){ dismountVehicle(); }
+  }
+  // gắn sự kiện "giữ nút" cho các nút điều khiển xe/máy bay
+  (function bindVehicleBtns(){
+    const bind = (id, key)=>{
+      const b = document.getElementById(id); if(!b) return;
+      const on = e=>{ e.preventDefault(); vInput[key]=true; b.classList.add('hold'); };
+      const off = ()=>{ vInput[key]=false; b.classList.remove('hold'); };
+      b.addEventListener('pointerdown', on);
+      b.addEventListener('pointerup', off);
+      b.addEventListener('pointercancel', off);
+      b.addEventListener('pointerleave', off);
+    };
+    bind('vFwd','fwd'); bind('vBack','back'); bind('vUp','up'); bind('vDown','down');
+    const rt = document.getElementById('rentTimer');
+    if(rt) rt.addEventListener('click', ()=>{
+      if(!riding) return;
+      if(riding.type==='plane' && riding.alt > 0.8 && !riding.autoDescend){ riding.autoDescend = true; UI.toast('Đang tự động hạ cánh…'); }
+      else dismountVehicle();
+    });
+  })();
+
   // ---- Main loop ----
   let lastT = performance.now(), fpsN = 0, fpsT = performance.now();
   function loop(now){
@@ -296,6 +498,9 @@
     fpsN++; if(now-fpsT>500){ const f=$('fps'); if(f) f.textContent = Math.round(fpsN*1000/(now-fpsT)) + ' FPS'; fpsN=0; fpsT=now; }
 
     if(playerMesh){
+      let moving = false;
+      if(riding){ updateRiding(dt); }
+      else {
       // movement (relative to camera)
       let mx=0, mz=0;
       if(input.keys['KeyW']||input.keys['ArrowUp']) { mx+=1; }
@@ -304,7 +509,7 @@
       if(input.keys['KeyD']||input.keys['ArrowRight']) { mz+=1; }
       if(input.joy.x||input.joy.y){ mx += -input.joy.y; mz += input.joy.x; }
 
-      const moving = (mx!==0 || mz!==0);
+      moving = (mx!==0 || mz!==0);
       playerMesh.userData.moving = moving;
       if(moving && playerMesh.userData.action==='sit'){ playerMesh.userData.action = null; player.action = null; } // đi là tự đứng dậy
 
@@ -345,6 +550,7 @@
           if(walkTo.stuck > 0.5){ walkTo = null; ud.moving = false; UI.toast('Có vật cản, lại gần ghế hơn nhé'); }
         }
       }
+      } // end else (!riding)
 
       if(speedBoost>0) speedBoost-=dt;
 
@@ -356,6 +562,13 @@
 
       // update animations
       Scene3D.updateCharacter(playerMesh, dt, time);
+      if(riding){
+        // đặt nhân vật ngồi vào ghế xe (override mọi thứ animation đặt lại)
+        playerMesh.position.set(riding.v.position.x, riding.alt + riding.seatH, riding.v.position.z);
+        playerMesh.rotation.y = riding.yaw;
+        playerMesh.userData.face = riding.yaw;
+        playerMesh.userData.moving = false;
+      }
       Object.values(otherMeshes).forEach(m=>{
         // bot/other movement (from net)
         const p = Net.getPlayers().find(pp=>pp.id===m.userData?._id);
@@ -379,9 +592,9 @@
         }
       });
 
-      // zone portal
+      // zone portal (bỏ qua khi đang lái xe / bay)
       const portal = Scene3D.atPortal(currentZone, playerMesh.position.x, playerMesh.position.z);
-      if(portal){
+      if(portal && !riding){
         currentZone = portal.to; walkTo = null;
         Scene3D.buildZone(currentZone);
         // re-add player + others
@@ -407,10 +620,11 @@
         if(n.wv>0){ n.wv -= dt; if(n.wv<=0) ud.action = null; }
         Scene3D.updateCharacter(m, dt, time);
       });
-      Scene3D.updateCamera(playerMesh.position.x, playerMesh.position.z);
+      if(!riding) Scene3D.updateCamera(playerMesh.position.x, playerMesh.position.z);
       Park.update(currentZone);
       Fishing.update(dt, player, onFishEvent);
       UI.updateHUD(player);
+      saveT += dt; if(saveT > 3){ saveT = 0; saveNow(); }
     }
 
     Scene3D.render(time);

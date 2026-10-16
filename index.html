@@ -124,11 +124,6 @@
       <span>🏪 Dịch vụ thành phố</span>
       <button class="panel-close" data-close="shopPanel">✕</button>
     </div>
-    <div class="shop-tabs">
-      <button class="shop-tab active" data-tab="cinema">🎬 Rạp phim</button>
-      <button class="shop-tab" data-tab="lottery">🎰 Xổ số</button>
-      <button class="shop-tab" data-tab="rental">🛵 Thuê đồ</button>
-    </div>
     <div id="shopContent" class="shop-content"></div>
   </div>
 
@@ -164,6 +159,16 @@
     <div id="gameBody" class="mg-body"></div>
   </div>
 
+  <!-- Vehicle control HUD (khi đang ngồi xe/máy bay thuê) -->
+  <div id="vehicleHud" class="vehicle-hud hidden">
+    <button id="rentTimer" class="rent-timer" title="Bấm để xuống xe">Xuống xe · 5:00</button>
+    <div id="vehicleBtns" class="vehicle-btns">
+      <button class="vbtn" id="vUp">Bay lên ↑</button>
+      <button class="vbtn" id="vDown">Hạ cánh ↓</button>
+      <button class="vbtn" id="vBack">Lùi</button>
+      <button class="vbtn" id="vFwd">Tiến</button>
+    </div>
+  </div>
   <div id="toast" class="toast hidden"></div>
 </div>
 
