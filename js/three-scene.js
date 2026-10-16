@@ -272,8 +272,8 @@ const Scene3D = (() => {
     B.box(1.5,2.5,0.1,0,y0+1.25,-ld/2-0.03,cream); B.box(1.2,2.35,0.12,0,y0+1.2,-ld/2-0.06,0x4a3a30);
     const nb=Math.max(1,Math.floor(lw/4)); for(let i=0;i<nb;i++){ const u=-lw/2+(i+.5)*lw/nb; if(Math.abs(u)<1.3) continue; B.box(1.4,1.5,0.1,u,y0+1.5,-ld/2-0.03,cream); B.box(1.15,1.25,0.12,u,y0+1.5,-ld/2-0.06,glassB); }
     const g=new THREE.Group(); g.add(B.build());
-    const sg2=makeTextSprite(b.name,{fontsize:32,color:'#ffe08a',bg:'rgba(0,0,0,0)'});
-    const sh=Math.min(0.5, lw*0.72/sg2.userData.ar); sg2.position.set(0,3.3,ld/2+0.28); sg2.scale.set(sh*sg2.userData.ar,sh,1); g.add(sg2);
+    const sg2=makeTextPlane(b.name,{fontsize:32,color:'#ffe08a',bg:'rgba(0,0,0,0)'});
+    const sh=Math.min(0.5, lw*0.72/sg2.userData.ar); sg2.position.set(0,3.3,ld/2+0.56); sg2.scale.set(sh*sg2.userData.ar,sh,1); g.add(sg2);   // z 0.56: nằm trước mái hiên (nhô tới 0.5) nên không bị hiên che
     g.position.set(b.x,0,b.z); g.rotation.y=b.ry||0; worldGroup.add(g);
   }
 
@@ -305,14 +305,20 @@ const Scene3D = (() => {
     // vạch sơn ngựa: mỗi sọc DÀI theo chiều xe chạy, xếp dày theo chiều người đi bộ
     [-18.5,18.5].forEach(zc=>{ for(let z=zc-2.1;z<=zc+2.1;z+=0.85) flat(5.5,0.45,0,0.11,z,white); });
     [-18.5,18.5].forEach(xc=>{ for(let x=xc-2.1;x<=xc+2.1;x+=0.85) flat(0.45,5.5,x,0.11,0,white); });
-    // ===== SÂN KHẤU trước màn hình: sàn gỗ + mặt trước xanh lá + bậc thang giữa =====
-    const wood=L(0xc99a6b), stageGreen=L(0x3f7a4a);
-    bx(22,0.5,7,0,0.25,-35,wood); bx(22,0.5,0.4,0,0.25,-31.6,stageGreen);
+    // ===== SÂN KHẤU trước màn hình: thân gỗ nâu sẫm + mặt sàn gỗ sáng nhô ra làm gờ + bậc thang giữa + nền gạch xung quanh =====
+    // Mặt sàn vẫn cao 0.5 (khớp groundY / collides). Trước đây mặt trước tô xanh lá cùng tông cỏ và cao đúng 0.5 → trùng mặt phẳng với sàn nên chớp xanh ở mép.
+    const wood=L(0xc99a6b), woodDark=L(0x5a3a26);
+    bx(22.04,0.08,7.04,0,0.04,-35,L(0x3f2819));      // chân đế sẫm hơn
+    bx(22,0.44,7,0,0.22,-35,woodDark);               // thân sân khấu: gỗ nâu sẫm, cao 0.44
+    bx(22.3,0.06,7.3,0,0.47,-35,wood);               // mặt sàn: gỗ sáng dày 0.06 (0.44→0.5), nhô ra 0.15 mỗi phía làm gờ
+    // nền gạch dưới + quanh sân khấu: nối liền nền chính ở z=-30 (hết dải cỏ phía trước), thêm 4 đơn vị mỗi bên và phía sau.
+    // Mép trái x=-15 và mép nam z=-30 đều nằm đúng mốc gạch 2.5 của nền chính (x=-30+2.5k) nên ô gạch khớp liền mạch.
+    flat(30,12.5,0,0.02,-36.25,L({map:tileTex('#f2dcb5','#e6cfa2',12,5)}));
     for(let s=0;s<3;s++){ bx(5,0.15*(3-s),1.0,0,0.075*(3-s),-31.0+s*1.0,wood); }
     [-10.5,10.5].forEach(sx=>bx(1.1,2.4,1,sx,1.5,-36,L(0x1b1f27)));
     (ZONES.plaza.flowers||[]).forEach(f=>{ bx(3,0.5,1.2,f.x,0.3,f.z,L(0xe6d3b0));
       for(let i=-1;i<=1;i++) for(let j=0;j<2;j++){ const fl=new THREE.Mesh(new THREE.SphereGeometry(0.22,6,5),L(i%2?0xf06a8d:0xff8fa8)); fl.position.set(f.x+i*0.9,0.65,f.z+(j-0.5)*0.5); worldGroup.add(fl); } });
-    for(let i=0;i<22;i++){ const a=i/22*Math.PI*2+Math.sin(i*3)*0.1, r=46+Math.sin(i*5)*4; const tx=Math.cos(a)*r, tz=Math.sin(a)*r; if((tx>33&&Math.abs(tz)<21)||(tx<-33&&tz>-15&&tz<19)||(tz>29&&tx>-27&&tx<28)||(tx<-30&&Math.abs(tz)<14)||(tx>30&&Math.abs(tz)<4)) continue; makeTree(tx, tz, 1.5+Math.abs(Math.sin(i*7))*0.8, false); }
+    for(let i=0;i<22;i++){ const a=i/22*Math.PI*2+Math.sin(i*3)*0.1, r=46+Math.sin(i*5)*4; const tx=Math.cos(a)*r, tz=Math.sin(a)*r; if((tx>33&&Math.abs(tz)<21)||(tx<-33&&tz>-15&&tz<19)||(tz>29&&tx>-27&&tx<28)||(tx<-30&&Math.abs(tz)<14)||(tx>30&&Math.abs(tz)<4)) continue; makeTree(tx, (Math.abs(tx)<17&&tz>-44.2&&tz<-29)?-44.6:tz, 1.5+Math.abs(Math.sin(i*7))*0.8, false); }   // cây vành đai lùi ra sau nền gạch sân khấu (không đứng vắt ngang mép gạch)
     buildParkLayout();
     buildExtras();
   }
@@ -602,8 +608,8 @@ const Scene3D = (() => {
     return z;
   }
 
-  // ===== TEXT SPRITE (name + chat) =====
-  function makeTextSprite(text, opts={}){
+  // ===== TEXT (name + chat + biển) — có kiểm tra độ sâu: bị tòa nhà / cây / xe che thì chữ cũng bị che =====
+  function makeTextTex(text, opts={}){
     const { fontsize=24, color='#fff', bg='rgba(0,0,0,.6)' } = opts;
     const SS = 3;   // vẽ gấp 3 lần rồi thu nhỏ → chữ nét trên màn retina và khi camera zoom gần
     const c = document.createElement('canvas');
@@ -618,9 +624,19 @@ const Scene3D = (() => {
     g2.font = `bold ${fontsize}px sans-serif`; g2.fillStyle = color; g2.textAlign='center'; g2.textBaseline='middle';
     if(/,0\)$/.test(bg)){ g2.lineWidth=6; g2.lineJoin='round'; g2.strokeStyle='rgba(20,30,40,.7)'; g2.strokeText(text, lw/2, lh/2); }
     g2.fillText(text, lw/2, lh/2);
-    const tex = new THREE.CanvasTexture(c);
-    const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map:tex, transparent:true, depthTest:false }));
-    spr.userData.ar = lw/lh; return spr;
+    return { tex:new THREE.CanvasTexture(c), ar:lw/lh };
+  }
+  // Sprite (luôn quay mặt về camera): tên trên đầu, bong bóng chat, biển treo giữa trời. depthTest:true để bị vật cản che; depthWrite:false để viền trong suốt không cắt chữ khác
+  function makeTextSprite(text, opts={}){
+    const t = makeTextTex(text, opts);
+    const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map:t.tex, transparent:true, depthTest:true, depthWrite:false }));
+    spr.userData.ar = t.ar; return spr;
+  }
+  // Tấm phẳng gắn cố định vào tường (biển hiệu tòa nhà): không bị xoay theo camera nên không bị tường cắt mất một nửa khi nhìn xiên
+  function makeTextPlane(text, opts={}){
+    const t = makeTextTex(text, opts);
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(1,1), new THREE.MeshBasicMaterial({ map:t.tex, transparent:true, depthWrite:false }));
+    m.userData.ar = t.ar; return m;
   }
   function roundRect2(g,x,y,w,h,r){ g.beginPath(); g.moveTo(x+r,y); g.arcTo(x+w,y,x+w,y+h,r); g.arcTo(x+w,y+h,x,y+h,r); g.arcTo(x,y+h,x,y,r); g.arcTo(x,y,x+w,y,r); g.closePath(); }
 
@@ -642,7 +658,7 @@ const Scene3D = (() => {
     if(parts.chatBubble){ charGroup.remove(parts.chatBubble); parts.chatBubble = null; }
     if(!text) return;
     const bubble = makeTextSprite(text.length>24? text.slice(0,24)+'…' : text, { fontsize:22, color:'#222', bg:'#ffffff' });
-    bubble.position.y = 5.0; bubble.scale.set(5, 1.2, 1);
+    bubble.position.y = 5.0; bubble.scale.set(5, 1.2, 1); bubble.renderOrder = 2;
     charGroup.add(bubble); parts.chatBubble = bubble;
   }
 
