@@ -20,7 +20,7 @@ const Scene3D = (() => {
   // Độ phân giải thích ứng: bắt đầu ở mật độ điểm ảnh gốc của máy (tối đa 3x), tự hạ khi FPS < 24. Thêm ?res=1.5 vào URL để ép cố định.
   const RES = { max:Math.min(window.devicePixelRatio||1, 3), min:1, cur:1, n:0, t:0, low:0, warm:true, fixed:false };
   const maxAniso = () => Math.min(8, renderer.capabilities.getMaxAnisotropy());   // nền gạch không bị nhoè khi nhìn xiên
-  let waterMesh = null, fountainParticles = null;
+  let waterMesh = null, fountainFx = null;
   let screenInfo = null, screenCanvas = null, screenTex = null, spinners = [];
   let ferris = null, racers = [], raceCanvas = null, raceTex = null;
 
@@ -48,7 +48,7 @@ const Scene3D = (() => {
   const H = Math.PI/2, P2 = a=>a.map(([x,z])=>({x,z}));
   const Bd = (x,z,w,d,h,ry,color,roof,type,name)=>({x,z,w,d,h,ry,color,roof,type,name});
   Object.assign(ZONES.plaza, {
-    size:104, race:{x:43,z:0,rx:6,rz:11}, rentLot:{x:-42,z:3}, wheel:{x:14,z:42,r:3}, spawn:{x:0,z:9}, portal:{x:0,z:37,w:6,d:3,to:'fishing',label:'🚤 Đảo câu cá'},
+    size:104, race:{x:42.4,z:0,rin:1.7,rout:8,hs:9.6,ro:8.6,lanes:7}, rentLot:{x:-42,z:3}, wheel:{x:14,z:42,r:3}, spawn:{x:0,z:9}, portal:{x:0,z:37,w:6,d:3,to:'fishing',label:'🚤 Đảo câu cá'},
     buildings:[
       Bd(-22,-27,10,6,8,0,0xe8876f,0xc96a55,'shop','SUNNY MART'), Bd(22,-27,10,6,10,0,0x8b72c8,0x6a53a8,'lottery','XỔ SỐ CITY'),
       Bd(-27,-9,6,10,9,H,0x4fa3ab,0x2f7f88,'cinema','RẠP PHIM'), Bd(-27,9,6,8,6,H,0x6fb7b0,0x3f8f8c,'fishshop','ĐÁO CÂU CÁ'),
@@ -198,12 +198,27 @@ const Scene3D = (() => {
     [-10.5,10.5].forEach(sx=>bx(1.1,2.4,1,sx,1.5,-36,L(0x1b1f27)));
     (ZONES.plaza.flowers||[]).forEach(f=>{ bx(3,0.5,1.2,f.x,0.3,f.z,L(0xe6d3b0));
       for(let i=-1;i<=1;i++) for(let j=0;j<2;j++){ const fl=new THREE.Mesh(new THREE.SphereGeometry(0.22,6,5),L(i%2?0xf06a8d:0xff8fa8)); fl.position.set(f.x+i*0.9,0.65,f.z+(j-0.5)*0.5); worldGroup.add(fl); } });
-    for(let i=0;i<22;i++){ const a=i/22*Math.PI*2+Math.sin(i*3)*0.1, r=46+Math.sin(i*5)*4; const tx=Math.cos(a)*r, tz=Math.sin(a)*r; if((tx>33&&Math.abs(tz)<17)||(tx<-33&&tz>-15&&tz<19)||(tz>33&&tx>-21&&tx<23)) continue; makeTree(tx, tz, 1.5+Math.abs(Math.sin(i*7))*0.8, false); }
+    for(let i=0;i<22;i++){ const a=i/22*Math.PI*2+Math.sin(i*3)*0.1, r=46+Math.sin(i*5)*4; const tx=Math.cos(a)*r, tz=Math.sin(a)*r; if((tx>33&&Math.abs(tz)<21)||(tx<-33&&tz>-15&&tz<19)||(tz>33&&tx>-21&&tx<23)) continue; makeTree(tx, tz, 1.5+Math.abs(Math.sin(i*7))*0.8, false); }
     buildExtras();
   }
 
-  function setRacers(ts){ const R=ZONES.plaza.race; racers.forEach((g,i)=>{ const a=ts[i], l=0.72+i*0.08, vx=-Math.sin(a)*R.rx*l, vz=Math.cos(a)*R.rz*l;
-    g.position.set(R.x+Math.cos(a)*R.rx*l,0.14,R.z+Math.sin(a)*R.rz*l); g.rotation.y=Math.atan2(-vz,vx); }); }
+  // Đường đua hình sân vận động (2 đoạn thẳng + 2 nửa vòng), mọi làn chạy cùng "tiến độ" u nên luôn thẳng hàng ngang nhau
+  function stadiumPt(r,u){
+    const R=ZONES.plaza.race, S=R.hs, rm=(R.rin+R.rout)/2, cap=Math.PI*rm, tot=4*S+2*cap;
+    let s=(((u%1)+1)%1)*tot, x,z,vx,vz,th;
+    if(s<S){ x=r; z=-s; vx=0; vz=-1; }
+    else if((s-=S)<cap){ th=s/cap*Math.PI; x=r*Math.cos(th); z=-S-r*Math.sin(th); vx=-Math.sin(th); vz=-Math.cos(th); }
+    else if((s-=cap)<2*S){ x=-r; z=-S+s; vx=0; vz=1; }
+    else if((s-=2*S)<cap){ th=Math.PI+s/cap*Math.PI; x=r*Math.cos(th); z=S-r*Math.sin(th); vx=-Math.sin(th); vz=-Math.cos(th); }
+    else { s-=cap; x=r; z=S-s; vx=0; vz=-1; }
+    return {x:R.x+x, z:R.z+z, vx, vz, tot};
+  }
+  const RACE_GATE=0.02;   // vạch xuất phát nằm sau vạch đích một đoạn ngắn
+  function laneR(i){ const R=ZONES.plaza.race, lw=(R.rout-R.rin)/R.lanes; return R.rin+(i+0.5)*lw; }
+  // ps: tiến độ 0..1 của từng con; run: đang đua; win: chỉ số con thắng (nhảy ăn mừng) hoặc -1
+  function setRacers(ps,run,win){ const t=performance.now()/1000;
+    racers.forEach((g,i)=>{ const q=stadiumPt(laneR(i), RACE_GATE+(1-RACE_GATE)*(ps[i]||0));
+      g.position.set(q.x,0.15,q.z); g.rotation.y=Math.atan2(-q.vz,q.vx); if(window.Animals) Animals.animate(g,t,!!run,win===i); }); }
   function setRaceBoard(sub,tl,tt,sl,st){
     if(!raceCanvas) return; const g=raceCanvas.getContext('2d');
     g.fillStyle='#173a36'; g.fillRect(0,0,1024,384); g.textAlign='center'; g.fillStyle='#fff'; g.font='bold 64px sans-serif'; g.fillText('TRƯỜNG ĐUA THÚ',512,80);
@@ -215,17 +230,43 @@ const Scene3D = (() => {
     const Z=ZONES.plaza, L=c=>new THREE.MeshLambertMaterial({color:c}), R=Z.race, Lt=Z.rentLot, W=Z.wheel;
     const box=(w,h,d,x,y,zz,c,pr)=>{ const o=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),L(c)); o.position.set(x,y,zz); o.castShadow=true; (pr||worldGroup).add(o); return o; };
     const ell=(g,c,y,sx,sz)=>{ const o=new THREE.Mesh(g,L(c)); o.rotation.x=-Math.PI/2; o.scale.set(sx,sz,1); o.position.set(R.x,y,R.z); o.receiveShadow=true; worldGroup.add(o); };
-    // --- trường đua thú ---
-    ell(new THREE.CircleGeometry(1,48),0xd9754b,0.12,R.rx,R.rz); ell(new THREE.CircleGeometry(1,48),0x58b58a,0.14,R.rx*.62,R.rz*.62);
-    [0.7,0.8,0.9].forEach(k=>ell(new THREE.RingGeometry(k,k+0.015,64),0xf4f1e6,0.13,R.rx,R.rz));
-    const rail=new THREE.Mesh(new THREE.TorusGeometry(1,0.02,6,64),L(0xf4f1e6)); rail.rotation.x=Math.PI/2; rail.scale.set(R.rx*1.12,R.rz*1.12,1); rail.position.set(R.x,0.85,R.z); worldGroup.add(rail);
-    for(let i=0;i<32;i++){ const a=i/32*Math.PI*2; box(0.12,0.9,0.12,R.x+Math.cos(a)*R.rx*1.12,0.45,R.z+Math.sin(a)*R.rz*1.12,0xf4f1e6); }
-    [0xe74c3c,0x3498db,0xf1c40f,0x9b59b6].forEach(c=>{ const g=new THREE.Group(), b=new THREE.Mesh(new THREE.SphereGeometry(0.45,10,8),L(c)), h=new THREE.Mesh(new THREE.SphereGeometry(0.28,8,6),L(c));
-      b.scale.set(1.3,0.9,0.9); b.position.y=0.5; b.castShadow=true; h.position.set(0.6,0.8,0); g.add(b); g.add(h); worldGroup.add(g); racers.push(g); });
+    // --- trường đua thú: sân vận động 7 làn ---
+    const N=R.lanes, LW=(R.rout-R.rin)/N, LC=Animals.LANE_CSS, midX=R.x+(R.rin+R.rout)/2;
+    const stadPath=(P,r)=>{ const S=R.hs; P.moveTo(r,-S); P.lineTo(r,S); P.absarc(0,S,r,0,Math.PI,false); P.lineTo(-r,-S); P.absarc(0,-S,r,Math.PI,2*Math.PI,false); };
+    const band=(r0,r1,y,col)=>{ const sh=new THREE.Shape(); stadPath(sh,r1); if(r0>0){ const h=new THREE.Path(); stadPath(h,r0); sh.holes.push(h); }
+      const m=new THREE.Mesh(new THREE.ShapeGeometry(sh,24),L(col)); m.rotation.x=-Math.PI/2; m.position.set(R.x,y,R.z); m.receiveShadow=true; worldGroup.add(m); return m; };
+    band(R.rout,R.ro+0.6,0.10,0x78c27f);                                   // thảm cỏ viền ngoài
+    for(let i=0;i<N;i++) band(R.rin+i*LW,R.rin+(i+1)*LW,0.12,i%2?0xc96f45:0xd9854f);   // 7 làn đất đỏ xen 2 tông
+    for(let k=0;k<=N;k++) band(R.rin+k*LW-0.03,R.rin+k*LW+0.03,0.14,0xf4f1e6);        // vạch kẻ làn
+    band(0,R.rin-0.03,0.14,0x58b58a);                                      // bãi cỏ giữa
+    const tube=(r,y,rad,col)=>{ const pts=[]; for(let k=0;k<120;k++){ const q=stadiumPt(r,k/120); pts.push(new THREE.Vector3(q.x,y,q.z)); }
+      const m=new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts,true),240,rad,6,true),L(col)); m.castShadow=true; worldGroup.add(m); };
+    const posts=(r,h,n,fin)=>{ for(let k=0;k<n;k++){ const q=stadiumPt(r,k/n); box(0.12,h,0.12,q.x,h/2,q.z,0xf4f1e6);
+      if(fin){ const f=new THREE.Mesh(new THREE.SphereGeometry(0.1,8,6),L(parseInt(LC[k%N].slice(1),16))); f.position.set(q.x,h+0.08,q.z); worldGroup.add(f); } } };
+    tube(R.rout+0.3,0.95,0.04,0xf4f1e6); tube(R.rout+0.3,0.58,0.04,0xf4f1e6); posts(R.rout+0.3,1.0,56,true);   // lan can ngoài 2 tầng
+    tube(R.rin-0.25,0.7,0.04,0xf4f1e6); posts(R.rin-0.25,0.75,32,false);                                     // lan can trong
+    for(let k=-3;k<=3;k++){ const bz=R.z+k*2.8, bs=new THREE.Mesh(new THREE.SphereGeometry(0.5,10,8),L(0x3f9248)); bs.position.set(R.x,0.45,bz); bs.scale.y=0.8; bs.castShadow=true; worldGroup.add(bs);
+      [0xf06a8d,0xffd34d,0xffffff].forEach((c,j)=>{ const fl=new THREE.Mesh(new THREE.SphereGeometry(0.1,6,5),L(c)); fl.position.set(R.x+Math.cos(j*2.1+k)*0.5,0.78,bz+Math.sin(j*2.1+k)*0.5); worldGroup.add(fl); }); }
+    // vạch đích caro + cổng đích
+    const ck=document.createElement('canvas'); ck.width=512; ck.height=64; const cg=ck.getContext('2d');
+    for(let a=0;a<16;a++) for(let b2=0;b2<2;b2++){ cg.fillStyle=(a+b2)%2?'#111':'#fff'; cg.fillRect(a*32,b2*32,32,32); }
+    const fl=new THREE.Mesh(new THREE.PlaneGeometry(R.rout-R.rin,0.6),new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(ck)})); fl.rotation.x=-Math.PI/2; fl.position.set(midX,0.16,R.z); worldGroup.add(fl);
+    const xi=R.x+R.rin-0.6, xo=R.x+R.rout+0.6; [xi,xo].forEach(x=>box(0.3,3.8,0.3,x,1.9,R.z,0xf4f1e6)); box(xo-xi+0.6,0.35,0.35,(xi+xo)/2,3.7,R.z,0xe74c3c);
+    { const sp=xo-xi+0.6; for(let k=0;k<14;k++) box(sp/14,0.17,0.37,xi-0.3+(k+0.5)*sp/14,3.7+(k%2?0.09:-0.09),R.z,k%2?0x111111:0xffffff); }
+    const fs=makeTextSprite('🏁 VỀ ĐÍCH 🏁',{fontsize:34,color:'#fff',bg:'rgba(20,40,38,.92)'}); fs.position.set(midX,4.5,R.z); fs.scale.set(0.9*fs.userData.ar,0.9,1); worldGroup.add(fs);
+    // vạch xuất phát + cổng số làn
+    const g0=stadiumPt(R.rin,RACE_GATE); const sl=new THREE.Mesh(new THREE.PlaneGeometry(R.rout-R.rin,0.14),L(0xffffff)); sl.rotation.x=-Math.PI/2; sl.position.set(midX,0.16,g0.z); worldGroup.add(sl);
+    for(let k=0;k<=N;k++) box(0.08,1.3,0.08,R.x+R.rin+k*LW,0.65,g0.z+1.25,0xf4f1e6);
+    for(let i=0;i<N;i++){ const cx=R.x+R.rin+(i+0.5)*LW, lc=parseInt(LC[i].slice(1),16);
+      box(LW-0.04,0.1,0.1,cx,1.3,g0.z+1.25,lc);
+      const nc=document.createElement('canvas'); nc.width=nc.height=64; const ng=nc.getContext('2d'); ng.fillStyle=LC[i]; ng.beginPath(); ng.arc(32,32,30,0,7); ng.fill();
+      ng.fillStyle='#fff'; ng.font='bold 40px sans-serif'; ng.textAlign='center'; ng.textBaseline='middle'; ng.strokeStyle='rgba(0,0,0,.5)'; ng.lineWidth=6; ng.strokeText(i+1,32,35); ng.fillText(i+1,32,35);
+      const pl=new THREE.Mesh(new THREE.CircleGeometry(0.3,24),new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(nc),transparent:true})); pl.rotation.x=-Math.PI/2; pl.position.set(cx,0.17,g0.z+0.62); worldGroup.add(pl); }
+    for(let i=0;i<Animals.count;i++){ const an=Animals.build(i); worldGroup.add(an); racers.push(an); }   // 7 bạn thú
     const bd=new THREE.Group(); box(14.6,6,0.5,0,3.8,0,0x1d3b34,bd); [-6,6].forEach(x=>box(0.6,1,0.6,x,0.5,0,0x1d3b34,bd));
     raceCanvas=document.createElement('canvas'); raceCanvas.width=1024; raceCanvas.height=384; raceTex=new THREE.CanvasTexture(raceCanvas);
     const pn=new THREE.Mesh(new THREE.PlaneGeometry(14,5.4),new THREE.MeshBasicMaterial({map:raceTex})); pn.position.set(0,3.8,0.27); bd.add(pn);
-    bd.position.set(R.x+8.3,0,R.z); bd.rotation.y=-Math.PI/2; worldGroup.add(bd); setRaceBoard('Sơ Cấp','VÉ CỦA BẠN','—','TRẠNG THÁI','Đang tải…'); setRacers([0,0,0,0].map(()=>Math.PI/2));
+    bd.position.set(R.x+R.ro+0.95,0,R.z); bd.rotation.y=-Math.PI/2; worldGroup.add(bd); setRaceBoard('Sơ Cấp','VÉ CỦA BẠN','—','TRẠNG THÁI','Đang tải…'); setRacers(Array(N).fill(0),false,-1);
     // --- bãi thuê xe + máy bay ---
     box(10,0.06,26,Lt.x,0.03,Lt.z,0x3a3f47);
     [0xe85c5c,0x4aa3df,0xf2c94c,0x8fc15a].forEach((c,i)=>{ const g=new THREE.Group(); box(3.2,0.8,1.6,0,0.7,0,c,g); box(1.7,0.7,1.4,-0.1,1.4,0,0x2b3440,g);
@@ -249,7 +290,7 @@ const Scene3D = (() => {
     worldGroup = new THREE.Group();
     curZoneId = zoneId;
     const z = ZONES[zoneId];
-    waterMesh = null; fountainParticles = null; screenInfo = null; screenCanvas = null; spinners = []; ferris = null; racers = []; raceCanvas = null;
+    waterMesh = null; fountainFx = null; screenInfo = null; screenCanvas = null; spinners = []; ferris = null; racers = []; raceCanvas = null;
 
     // ground
     const ground = new THREE.Mesh(
@@ -323,18 +364,11 @@ const Scene3D = (() => {
       lamp.position.set(l.x,0,l.z); worldGroup.add(lamp);
     });
 
-    // fountain (nhiều tầng + tia nước vòng cung)
+    // fountain: đài phun nước Hoàng Gia (js/fountain.js) — đặt trên nền đá đỏ (mặt y=0.13)
     if(z.fountain){
-      const f=new THREE.Group(), cm=(c,o)=>new THREE.MeshLambertMaterial({color:c,transparent:!!o,opacity:o||1});
-      const cyl=(r1,r2,h,y,c,o)=>{ const m=new THREE.Mesh(new THREE.CylinderGeometry(r1,r2,h,32),cm(c,o)); m.position.y=y; m.castShadow=true; f.add(m); };
-      cyl(3.3,3.5,0.5,0.25,0xe0c9a0);            // vành kem
-      cyl(3.0,3.0,0.1,0.5,0x4fc3d0,0.92);        // mặt nước màu ngọc
-      cyl(0.35,0.5,0.6,0.6,0xb89060);            // vòi phun trung tâm màu nâu
-      const jm=new THREE.MeshBasicMaterial({color:0xc4f3f7,transparent:true,opacity:0.85});
-      for(let i=0;i<8;i++){ const a=i/8*Math.PI*2, c=Math.cos(a), s=Math.sin(a);
-        const cv=new THREE.QuadraticBezierCurve3(new THREE.Vector3(0,0.95,0),new THREE.Vector3(c*1.5,3.2,s*1.5),new THREE.Vector3(c*2.6,0.55,s*2.6));
-        f.add(new THREE.Mesh(new THREE.TubeGeometry(cv,16,0.05,5,false),jm)); }
-      f.position.set(z.fountain.x,0.14,z.fountain.z); worldGroup.add(f);
+      fountainFx = Fountain.create();
+      fountainFx.group.position.set(z.fountain.x, 0.14, z.fountain.z);
+      worldGroup.add(fountainFx.group);
     }
 
     // water (fishing zone)
@@ -402,7 +436,7 @@ const Scene3D = (() => {
       // ốc vít trang trí 4 góc nắp lưng
       [[-1,1],[1,1],[-1,-1],[1,-1]].forEach(([sx,sy])=>{ const s=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.12,0.06,8), ventMat); s.rotation.x=Math.PI/2; s.position.set(sx*(sc.w/2-0.8), sc.y+sc.h/2+sy*(sc.h/2-0.8), -0.32); g.add(s); });
       g.position.set(sc.x, 0, sc.z); worldGroup.add(g);
-      screenInfo = sc; setScreenText('GCITY TV', 'Lại gần bấm E để chọn video YouTube');
+      screenInfo = sc; setScreenText('GCITY TV', 'Chạm NPC 📺 cạnh sân khấu để chọn video');
     }
     // ô mini game (pad phát sáng + viên ngọc xoay + nhãn)
     (z.games||[]).forEach(gm=>{
@@ -495,10 +529,10 @@ const Scene3D = (() => {
       if(Math.abs(x-b.x)<b.w/2+r && Math.abs(zpos-b.z)<b.d/2+r) return true;
     }
     for(const t of (z.trees||[])){ if(Math.hypot(x-t.x, zpos-t.z)<1.2+r) return true; }
-    if(z.fountain && Math.hypot(x-z.fountain.x, zpos-z.fountain.z)<3.5+r) return true;
+    if(z.fountain && Math.hypot(x-z.fountain.x, zpos-z.fountain.z)<Fountain.RADIUS+r) return true;
     if(z.screen && Math.abs(x-z.screen.x)<z.screen.w/2+r && Math.abs(zpos-z.screen.z)<1.2+r) return true;
     if(zoneId==='plaza' && Math.hypot(x,zpos)>53) return true;
-    if(z.race && ((x-z.race.x)/(z.race.rx+r))**2+((zpos-z.race.z)/(z.race.rz+r))**2<1) return true;
+    if(z.race && Math.hypot(x-z.race.x, Math.max(Math.abs(zpos-z.race.z)-z.race.hs,0)) < z.race.ro+r) return true;
     if(z.rentLot && Math.abs(x-z.rentLot.x)<5.5 && Math.abs(zpos-z.rentLot.z)<13) return true;
     if(z.wheel && Math.hypot(x-z.wheel.x,zpos-z.wheel.z)<z.wheel.r+r) return true;
     if(z.water){ const w=z.water; if(Math.abs(x-w.x)<w.w/2 && Math.abs(zpos-w.z)<w.d/2 && zpos>w.z-w.d/2+2) return true; }
@@ -590,20 +624,7 @@ const Scene3D = (() => {
     }
     spinners.forEach(m=>{ m.rotation.y = time*1.5; });
     if(ferris){ ferris.rot.rotation.z = time*0.2; ferris.gond.forEach(g=>g.rotation.z = -time*0.2); }
-    // fountain particles
-    if(fountainParticles){
-      const pos = fountainParticles.geometry.attributes.position.array;
-      const ud = fountainParticles.userData;
-      for(let i=0;i<ud.N;i++){
-        ud.t[i] += 0.03;
-        const phase = ud.t[i] % 1.5;
-        const a = ud.a[i];
-        pos[i*3] = Math.cos(a)*phase*2;
-        pos[i*3+1] = 3 + phase*3 - phase*phase*3;
-        pos[i*3+2] = Math.sin(a)*phase*2;
-      }
-      fountainParticles.geometry.attributes.position.needsUpdate = true;
-    }
+    if(fountainFx) fountainFx.update(time);
     if(waterMesh){
       const pos = waterMesh.geometry.attributes.position.array;
       for(let i=0;i<pos.length;i+=3){

@@ -87,21 +87,23 @@
       return otherMeshes[p.id];
     }
     Net.getPlayers().forEach(ensureOtherMesh);
-    // NPC đứng ở các điểm tương tác: [tên, giới tính, kiểu, x, z, hướng mặt, câu chào]
+    // NPC đứng ở các điểm tương tác: [tên, giới tính, kiểu, x, z, hướng mặt, câu chào, hành động, zone (mặc định plaza)]
     npcs = [
-      ['🎟 Út Cá Cược','female',1,35,-1.5,-Math.PI/2,'Chọn bạn thú đi, về nhất ăn x3.5 nha! 🐎','race'],
-      ['🚗 Tài Xế Chớp Nhoáng','male',2,-35,0,Math.PI/2,'Xe hay máy bay? Bay luôn cho nhanh! ✈'],
-      ['🍿 Bắp Rang Bự','male',4,-4,-28.8,0,'Bắp rang nóng giòn, phim hay chờ sẵn! 🍿'],
-      ['🎣 Sáu Cần Câu','female',2,-22.5,9.5,Math.PI/2,'Cá cắn câu rồi kìa, mua mồi đi bạn! 🎣'],
-      ['🎰 Bảy Vé Số','male',1,23.5,-22.5,0,'Số đẹp đây, thử vận may nào! 🍀'],
+      ['🎟 Út Cá Cược','female',1,31.9,-1.5,-Math.PI/2,'7 bạn thú ra sân! Cược 1 ăn 6, chọn con nào đây? 🐎','race'],
+      ['🚗 Tài Xế Chớp Nhoáng','male',2,-35,0,Math.PI/2,'Xe hay máy bay? Bay luôn cho nhanh! ✈','rental'],
+      ['🍿 Bắp Rang Bự','male',4,-4,-28.8,0,'Bắp rang nóng giòn, phim hay chờ sẵn! 🍿','cinema'],
+      ['🎣 Sáu Cần Câu','female',2,-22.5,9.5,Math.PI/2,'Cá cắn câu rồi kìa, mua mồi đi bạn! 🎣','fish'],
+      ['🎰 Bảy Vé Số','male',1,23.5,-22.5,0,'Số đẹp đây, thử vận may nào! 🍀','lottery'],
       ['🍕 Chị Pizza Nóng','female',4,22.5,-8,-Math.PI/2,'Pizza ra lò, vừa thổi vừa ăn nè! 🍕'],
       ['🛒 Tú Tạp Hóa','male',5,-20.5,-22.5,0,'Tạp hóa Sunny, cần gì cũng có! 🛒'],
       ['🃏 Mèo Lật Bài','female',0,-9.2,0,Math.PI/2,'Lật cặp giống nhau, thắng xu liền tay! 🃏','memory'],
       ['🎟 Chú Ba Đánh Lô','male',0,3,13.4,Math.atan2(-3,-13.4),'Chọn số đi con, 10 giải quay liền! 🎟','lo'],
-    ].map(([name,g,c,x,z,f,line,act])=>{
+      ['📺 Anh Chiếu Màn','male',3,12.5,-29.5,0,'Dán link YouTube, lên màn hình lớn liền! 📺','tv'],
+      ['🎣 Bà Tám Bến Câu','female',3,3.5,1,0,'Ra bến quăng cần đi, nhớ mua mồi nha! 🎣','fish','fishing'],
+    ].map(([name,g,c,x,z,f,line,act,zone])=>{
       const m = Scene3D.createCharacter(g, c, name, false);
       m.position.set(x, 0, z); m.userData.face = f; Scene3D.scene.add(m);
-      return { m, line, x, z, home:f, cd:0, wv:0, act };
+      return { m, line, x, z, home:f, cd:0, wv:0, act, zone:zone||'plaza' };
     });
     Net.onPlayerJoin(p=>{ ensureOtherMesh(p); UI.renderPlayers(Net.getPlayers()); });
     Net.onPlayerLeave(id=>{ if(otherMeshes[id]){ Scene3D.scene.remove(otherMeshes[id]); delete otherMeshes[id]; } UI.renderPlayers(Net.getPlayers()); });
@@ -136,7 +138,7 @@
     Park.init(player);
     UI.updateHUD(player);
     UI.renderPlayers(Net.getPlayers());
-    UI.addChat('Hệ thống', `Chào mừng ${player.name} đến GCITY 3D! WASD di chuyển, kéo màn hình để xoay/nghiêng camera, lăn chuột hoặc chụm 2 ngón để zoom, chạm vào ghế để ngồi (chạm chỗ khác hoặc di chuyển để đứng dậy), lại gần NPC rồi chạm vào NPC (hoặc bấm E) để chơi game.`, true);
+    UI.addChat('Hệ thống', `Chào mừng ${player.name} đến GCITY 3D! WASD di chuyển, kéo màn hình để xoay/nghiêng camera, lăn chuột hoặc chụm 2 ngón để zoom, chạm vào ghế để ngồi (chạm chỗ khác hoặc di chuyển để đứng dậy), lại gần NPC rồi chạm vào NPC (hoặc bấm E) để chơi game, mua vé/vé số, thuê đồ, câu cá, chiếu video TV.`, true);
 
     setTimeout(()=> $('loadingScreen').classList.add('hidden'), 500);
     requestAnimationFrame(loop);
@@ -214,20 +216,22 @@
   // E / chạm vào dòng gợi ý để tương tác (building, mini game, ghế, màn hình)
   // Game chỉ chơi qua NPC: lại gần NPC rồi chạm vào NPC (mobile) hoặc bấm E (desktop). Không có chữ gợi ý.
   const NPC_R = 5;
-  const NPC_ACT = { race:()=>Park.openRace(), memory:()=>Park.openGame('memory'), lo:()=>Park.openGame('lo') };
+  const NPC_ACT = {
+    race:()=>Park.openRace(), memory:()=>Park.openGame('memory'), lo:()=>Park.openGame('lo'),
+    fish:()=>UI.openPanel('fishPanel'), tv:()=>UI.openPanel('tvPanel'),
+    cinema:()=>UI.openShop('cinema'), lottery:()=>UI.openShop('lottery'), rental:()=>UI.openShop('rental'),
+  };
   const npcDist = n => Math.hypot(playerMesh.position.x - n.x, playerMesh.position.z - n.z);
   function nearestNpc(){
-    if(currentZone!=='plaza') return null;
     let best = null, bd = NPC_R;
-    npcs.forEach(n=>{ const d = npcDist(n); if(n.act && d < bd){ bd = d; best = n; } });
+    npcs.forEach(n=>{ if(n.zone!==currentZone) return; const d = npcDist(n); if(n.act && d < bd){ bd = d; best = n; } });
     return best;
   }
   function npcAt(cx, cy){   // NPC (đang trong tầm) gần điểm chạm nhất; dung sai 42px cho ngón tay
-    if(currentZone!=='plaza') return null;
     const cam = Scene3D.camera, W = window.innerWidth, H = window.innerHeight; cam.updateMatrixWorld();
     let best = null, bd = 42;
     npcs.forEach(n=>{
-      if(!n.act || npcDist(n) > NPC_R) return;
+      if(!n.act || n.zone!==currentZone || npcDist(n) > NPC_R) return;
       const pt = y=>{ const v = new THREE.Vector3(n.x, y, n.z).project(cam); return v.z < 1 ? [(v.x+1)/2*W, (1-v.y)/2*H] : null; };
       const a = pt(0.2), b = pt(1.9); if(!a || !b) return;
       const abx = b[0]-a[0], aby = b[1]-a[1];
@@ -391,7 +395,7 @@
       }
 
       npcs.forEach(n=>{
-        const m = n.m, ud = m.userData; m.visible = (currentZone==='plaza');
+        const m = n.m, ud = m.userData; m.visible = (n.zone===currentZone);
         const dx = playerMesh.position.x - n.x, dz = playerMesh.position.z - n.z, d = Math.hypot(dx,dz);
         const cur = ud.face||0, tgt = d<9 ? Math.atan2(dx,dz) : n.home;
         ud.face = cur + Math.atan2(Math.sin(tgt-cur), Math.cos(tgt-cur)) * Math.min(1, dt*6);

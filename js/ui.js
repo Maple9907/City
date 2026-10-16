@@ -83,6 +83,17 @@ const UI = (() => {
     if(wasHidden) p.classList.remove('hidden');
   }
   function closePanel(id){ $(id).classList.add('hidden'); }
+  // Mở hẳn panel (không toggle): dùng khi chạm vào NPC
+  function openPanel(id){
+    document.querySelectorAll('.panel').forEach(x=>x.classList.add('hidden'));
+    $(id).classList.remove('hidden');
+  }
+  // Mở cửa hàng ở đúng tab (cinema | lottery | rental), tô sáng tab tương ứng
+  function openShop(tab){
+    openPanel('shopPanel');
+    document.querySelectorAll('.shop-tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===tab));
+    renderShop(tab);
+  }
 
   function initPanels(callbacks){
     onChatSend = callbacks.onChatSend;
@@ -281,6 +292,6 @@ const UI = (() => {
   }
 
   return { setLoading, hideLoading, initCharSelect, showCharSelect, hideCharSelect,
-    togglePanel, closePanel, initPanels, addChat, updateHUD, toast, initJoystick,
+    togglePanel, closePanel, openPanel, openShop, initPanels, addChat, updateHUD, toast, initJoystick,
     renderInventory, renderPlayers, renderShop };
 })();

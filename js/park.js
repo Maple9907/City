@@ -8,31 +8,33 @@ const Park = (() => {
   const FW = 960, FH = 540;
   let player = null, frame = null, videoId = null, lastZone = null;
 
-  // ---------- Trường đua thú: mở vé 30s -> đua ~9s -> kết quả 7s ----------
-  const AN=['🐎 Ngựa Đỏ','🐕 Chó Xanh','🐇 Thỏ Vàng','🐢 Rùa Tím'], RC={id:206453,ph:'open',t:30,tk:null,p:[0,0,0,0],v:[],w:-1,fee:10,acc:0};
+  // ---------- Trường đua thú: 7 bạn thú · cược 1 ăn 6 · mở vé 30s -> đua ~10s -> kết quả 7s ----------
+  const AN=['🐎 Ngựa Đỏ','🐕 Chó Xanh','🐇 Thỏ Vàng','🐢 Rùa Tím','🦊 Cáo Cam','🐖 Heo Hồng','🐸 Ếch Xanh Lá'], N=AN.length, MULT=6;
+  const RC={id:206453,ph:'open',t:30,tk:null,p:AN.map(()=>0),v:[],w:-1,fee:10,acc:0};
+  const dot = i => `<span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:${Animals.LANE_CSS[i]};margin-right:6px;border:1px solid #fff6"></span>`;
   let raceT = 0;
   function raceStep(dt){
     RC.t -= dt;
-    if(RC.ph==='open' && RC.t<=0){ RC.ph='run'; RC.p=[0,0,0,0]; RC.v=AN.map(()=>.09+Math.random()*.05); RC.t=0; }
+    if(RC.ph==='open' && RC.t<=0){ RC.ph='run'; RC.p=AN.map(()=>0); RC.v=AN.map(()=>.085+Math.random()*.05); RC.t=0; }
     else if(RC.ph==='run'){
       RC.t += dt; AN.forEach((_,i)=>{ RC.p[i] += (RC.v[i] + Math.sin(RC.t*2+i*2)*.02)*dt; });
       const m = Math.max(...RC.p);
       if(m>=1){ RC.w=RC.p.indexOf(m); RC.ph='end'; RC.t=7;
-        if(RC.tk===RC.w){ const win=Math.round(RC.fee*3.5); player.coins+=win; UI.updateHUD(player); UI.toast(`🎉 Trúng vé đua! +${win}🪙`); }
+        if(RC.tk===RC.w){ const win=Math.round(RC.fee*MULT); player.coins+=win; UI.updateHUD(player); UI.toast(`🎉 Trúng vé đua! +${win}🪙`); }
         else if(RC.tk!==null) UI.toast('Vé đua không trúng, chúc may mắn!'); }
     }
-    else if(RC.ph==='end' && RC.t<=0){ RC.ph='open'; RC.t=30; RC.id++; RC.tk=null; RC.p=[0,0,0,0]; }
+    else if(RC.ph==='end' && RC.t<=0){ RC.ph='open'; RC.t=30; RC.id++; RC.tk=null; RC.p=AN.map(()=>0); RC.w=-1; }
     RC.acc += dt;
     if(RC.acc>=.5){ RC.acc=0;
       const st = RC.ph==='open' ? `Đang mở vé ${Math.ceil(RC.t)} giây` : RC.ph==='run' ? 'Đang đua!' : `Thắng: ${AN[RC.w]}`;
-      Scene3D.setRaceBoard(`Sơ Cấp · Phiên #${RC.id}`,'VÉ CỦA BẠN', RC.tk===null ? 'Chưa mua vé phiên này' : AN[RC.tk],'TRẠNG THÁI',st); }
-    Scene3D.setRacers(RC.p.map(p=> Math.PI/2 + p*Math.PI*2));
+      Scene3D.setRaceBoard(`Sơ Cấp · Phiên #${RC.id} · 7 thú · 1 ăn ${MULT}`,'VÉ CỦA BẠN', RC.tk===null ? 'Chưa mua vé phiên này' : AN[RC.tk],'TRẠNG THÁI',st); }
+    Scene3D.setRacers(RC.p, RC.ph==='run', RC.ph==='end' ? RC.w : -1);
   }
   function openRace(){
     const b = showGamePanel('🎟 Trường đua thú');
     if(RC.ph!=='open'){ b.innerHTML = `<div class="mg-info">${RC.ph==='run' ? 'Đang đua, chờ phiên sau để mua vé.' : 'Phiên đã kết thúc, chờ phiên mới.'}</div>`; return; }
-    if(RC.tk!==null){ b.innerHTML = `<div class="mg-info">Vé của bạn: ${AN[RC.tk]} (phiên #${RC.id}). Về nhất nhận x3.5.</div>`; return; }
-    b.innerHTML = AN.map((n,i)=>`<button class="shop-item" data-a="${i}">${n} — ${RC.fee}🪙</button>`).join('') + '<div class="mg-info">Chọn một bạn thú, về nhất nhận x3.5 tiền vé.</div>';
+    if(RC.tk!==null){ b.innerHTML = `<div class="mg-info">Vé của bạn: ${dot(RC.tk)}${RC.tk+1}. ${AN[RC.tk]} (phiên #${RC.id}). Về nhất nhận x${MULT}.</div>`; return; }
+    b.innerHTML = AN.map((n,i)=>`<button class="shop-item" data-a="${i}">${dot(i)}${i+1}. ${n} — ${RC.fee}🪙</button>`).join('') + `<div class="mg-info">Chọn một trong 7 bạn thú, về nhất ăn x${MULT} tiền vé (cược 1 ăn ${MULT}).</div>`;
     b.querySelectorAll('[data-a]').forEach(btn=> btn.onclick = ()=>{
       if(RC.ph!=='open') return openRace();
       if(player.coins<RC.fee){ UI.toast(`Cần ${RC.fee}🪙`); return; }
@@ -58,7 +60,7 @@ const Park = (() => {
   }
   function stopVideo(){
     videoId = null; frame.src = 'about:blank'; frame.style.visibility = 'hidden';
-    Scene3D.setScreenText('GCITY TV', 'Lại gần bấm E để chọn video YouTube');
+    Scene3D.setScreenText('GCITY TV', 'Chạm NPC 📺 cạnh sân khấu để chọn video');
   }
 
   // Ánh xạ hình chữ nhật FW×FH -> 4 điểm P (TL,TR,BR,BL) => CSS matrix3d
