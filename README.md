@@ -43,16 +43,3 @@ Toàn bộ asset tự vẽ bằng Three.js geometry (không file ngoài). Thay b
 - Xe: joystick hoặc nút Lùi / Tiến. Máy bay: thêm **Bay lên ↑ / Hạ cánh ↓**; cánh quạt đứng yên khi đỗ, giữ "Bay lên" thì nổ máy, **cánh quạt quay dần** rồi mới cất cánh, bay thì quay hết tốc lực. Bấm "Xuống xe · 4:22" để xuống (đang bay thì tự hạ cánh trước)
 - Model xe / máy bay nằm trong `js/vehicles.js` (dùng chung cho bãi đỗ và lúc lái). Đổi giá / thời gian thuê: `PRICE`, `RENT_SEC`; đổi màu / thêm xe: `CARS`, `PLANES`
 
-## v17: gợi ý trong bảng TV rút gọn còn "Gõ từ khoá hoặc dán link youtube để tìm".
-
-## v16: nhân vật leo được bậc thang + đứng trên sân khấu TV (trước đây luôn ở y=0 nên chìm xuống nền cỏ); chỉ lên được bằng bậc thang giữa; 2 loa là vật cản.
-
-## v15: đã xoá 2 ô vàng (Đánh lô) + hồng (Lật hình); NPC giữ nguyên.
-
-## v14 — cây / toà nhà / ánh sáng / lưu dữ liệu
-- **Ánh sáng**: trước đây ambient 0.85 + sun cho tổng ~1.33 ở mặt ngang → gạch, vỉa hè, cỏ bị cháy sáng thành trắng nhạt. Giờ HemisphereLight 0.30 + Ambient 0.32 + Sun 0.52 (tổng ~1.0) → màu gạch be/đỏ đất, cỏ xanh đúng như ảnh mẫu.
-- **Cây** (`makeTree`): tán low-poly shading phẳng (khối 20 mặt méo nhẹ), mỗi cây một dáng/một bảng màu xanh (cố định theo vị trí), thân thon + nhánh nhỏ, bệ đất nâu viền đá kem. Mỗi cây = 1 draw call.
-- **Toà nhà** (`makeBuilding`): cột góc, cửa sổ có nẹp chữ thập + bậu cửa + chậu hoa trên **cả 4 mặt** (trước đây mặt sau trơ), mái hiên sọc 3 bậc dốc, cửa chính có bậc thềm, mái có lan can + ống khói + máy lạnh. Mỗi toà = 1 mesh (trước là hàng trăm mesh/toà, mỗi mesh tạo 1 material riêng) → nhẹ hơn nhiều trên điện thoại.
-- **Lưu dữ liệu** (`game.js`): lưu NGAY khi tạo nhân vật; lưu mỗi 2s theo đồng hồ thật (trước phụ thuộc FPS: dt bị kẹp 0.05 nên máy yếu 5–10 FPS phải chờ 6–12s); lưu thêm khi `pagehide` / ẩn tab (điện thoại hay không chạy `beforeunload`); cookie dự phòng; kẹp `charIndex` để save cũ không làm kẹt game; chặn bấm đúp "Vào thành phố". Dữ liệu gắn với tên miền — đổi domain là máy mới. Muốn giữ nhân vật giữa nhiều máy phải lưu lên server/Firebase theo tài khoản.
-
-## v18: sắp xếp lại công viên — 4 nhánh đá đỏ của trục chữ thập kéo thẳng tới sân khấu / bãi xe / trường đua / cổng tàu; quảng trường gạch nối dài xuống phía nam với sân tròn + cổng gỗ trước cổng tàu; khu nghỉ chân (bàn, dù, 4 ghế) thay sàn gỗ trơ; nền đá cho vòng quay (dời sang x=15.5); lề + đèn + cây cho bãi thuê xe; thêm hàng ghế thứ 3 trước sân khấu và 2 ghế dọc lối ra cổng tàu; đồi cỏ bớt nhạt. Chỉ sửa `js/three-scene.js` (hàm `buildParkLayout`, dữ liệu `ZONES.plaza`), logic game giữ nguyên.
