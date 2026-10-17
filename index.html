@@ -22,6 +22,7 @@
 <!-- ===== CHARACTER SELECT ===== -->
 <div id="charSelect" class="char-select hidden">
   <div class="char-panel">
+    <button id="charClose" class="char-close hidden" title="Đóng" aria-label="Đóng">✕</button>
     <h2 class="char-title">Chọn nhân vật</h2>
     <div class="char-gender-tabs">
       <button class="gender-tab active" data-gender="male">Nam</button>
@@ -40,18 +41,14 @@
   <div id="threeContainer"></div>
   <iframe id="tvFrame" title="GCITY TV" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" referrerpolicy="strict-origin-when-cross-origin"></iframe>
 
-  <button class="hud-back" onclick="history.back()" title="Quay lại">←</button>
+  <button class="hud-back" id="btnExit" title="Thoát game">←</button>
   <!-- Top HUD -->
   <div class="hud-top">
     <div class="hud-player">
       <span id="hudName" class="hud-name">Player</span>
       <span class="hud-coin">🪙 <span id="hudCoin">100</span></span>
-      <span class="hud-zone" id="hudZone">Quảng trường 3D</span>
     </div>
-    <div class="hud-actions-top">
-      <button class="hud-btn" id="btnCam" title="Xoay camera">🎥</button>
-      <button class="hud-btn" id="btnPlayers" title="Người chơi">👥 <span id="playerCount">1</span></button>
-    </div>
+    <span class="hud-zone" id="hudZone">Quảng trường 3D</span>
   </div>
 
   <!-- Bottom action bar -->
@@ -61,6 +58,7 @@
     <button class="action-btn" id="btnEmote" title="Hành động"><span class="ic">🕺</span><span class="lb">Hành động</span></button>
     <button class="action-btn" id="btnChat" title="Chat"><span class="ic">💬</span><span class="lb">Chat</span></button>
     <button class="action-btn" id="btnInventory" title="Túi đồ"><span class="ic">🎒</span><span class="lb">Túi</span></button>
+    <button class="hud-players" id="btnPlayers" title="Người chơi">👥 <span id="playerCount">1</span></button>
   </div>
 
   <div id="fps" class="fps"></div>
@@ -112,9 +110,9 @@
     </div>
     <div class="fish-shop">
       <div class="shop-title">Mua mồi</div>
-      <button class="shop-item" data-bait="worm" data-price="5">🪱 Giun - 5🪙</button>
-      <button class="shop-item" data-bait="shrimp" data-price="15">🦐 Tép - 15🪙</button>
-      <button class="shop-item" data-bait="lure" data-price="40">✨ Mồi giả - 40🪙</button>
+      <button class="shop-item" data-bait="worm" data-price="5">🪱 Giun - 5 xu</button>
+      <button class="shop-item" data-bait="shrimp" data-price="15">🦐 Tép - 15 xu</button>
+      <button class="shop-item" data-bait="lure" data-price="40">✨ Mồi giả - 40 xu</button>
     </div>
   </div>
 
@@ -177,9 +175,20 @@
   <div id="toast" class="toast hidden"></div>
 </div>
 
+<!-- Hộp xác nhận chung (thoát game...) -->
+<div id="confirmBox" class="confirm-box hidden">
+  <div class="confirm-card">
+    <p id="confirmMsg"></p>
+    <div class="confirm-btns">
+      <button id="confirmNo" class="btn-secondary">Ở lại</button>
+      <button id="confirmYes" class="btn-primary">Đồng ý</button>
+    </div>
+  </div>
+</div>
+
+<script src="js/keys.js"></script>
 <script src="js/config.js"></script>
 <script src="js/net.js"></script>
-<script src="js/map.js"></script>
 <script src="js/player.js"></script>
 <script src="js/fishing.js"></script>
 <script src="js/ui.js"></script>
@@ -187,7 +196,9 @@
 <script src="js/animals.js"></script>
 <script src="js/fountain.js"></script>
 <script src="js/vehicles.js"></script>
+<script src="js/island.js"></script>
 <script src="js/three-scene.js"></script>
+<script src="js/ytkeys.js"></script>
 <script src="js/park.js"></script>
 <script src="js/game.js"></script>
 </body>

@@ -65,46 +65,72 @@ const Net = (() => {
   }
 
   // ---- FIREBASE ----
-  function initFirebase(player){
-    return new Promise((resolve,reject)=>{
-      // load firebase SDK dynamically
+  // Dữ liệu từ Firebase là dữ liệu của người lạ -> luôn qua cleanPlayer/cleanChat trước khi dùng.
+  const clampStr = (v, n) => String(v == null ? '' : v).slice(0, n);
+  const num = v => Number.isFinite(+v) ? +v : 0;
+  function cleanPlayer(d, id){
+    const gender = d.gender === 'female' ? 'female' : 'male';
+    const defs = (typeof Scene3D !== 'undefined' && Scene3D.CHAR_DEFS && Scene3D.CHAR_DEFS[gender]) || null;
+    const maxIdx = (defs ? defs.length : 6) - 1;
+    return { id, name: clampStr(d.name, 24).trim() || 'Player', gender,
+      charIndex: Math.max(0, Math.min(maxIdx, d.charIndex | 0)),
+      x: num(d.x), y: num(d.y), dir: d.dir | 0, action: d.action == null ? null : clampStr(d.action, 16) };
+  }
+  function cleanChat(d){ return { id: d.id === 'system' ? '' : clampStr(d.id, 40),   // người lạ không được giả tin 'Hệ thống'
+    name: clampStr(d.name, 24).trim() || 'Player', text: clampStr(d.text, 200), ts: num(d.ts) }; }
+
+  function loadScript(src){
+    return new Promise((res, rej)=>{
       const s = document.createElement('script');
-      s.src = "https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js";
-      s.onload = ()=>{
-        const s2 = document.createElement('script');
-        s2.src = "https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js";
-        s2.onload = ()=>{
-          try {
-            firebase.initializeApp(GCITY_CONFIG.FIREBASE);
-            fbRef = firebase.database().ref('gcity');
-            myId = 'p_' + Math.random().toString(36).substr(2,8);
-            const meRef = fbRef.child('players/'+myId);
-            meRef.set({ name:player.name, gender:player.gender, charIndex:player.charIndex, x:player.x, y:player.y, dir:0, ts:Date.now() });
-            meRef.onDisconnect().remove();
-            // listen
-            fbRef.child('players').on('child_added', s=>{
-              const d = s.val(); if(!d || s.key===myId) return;
-              players[s.key] = {...d, id:s.key};
-              emit('join', players[s.key]);
-            });
-            fbRef.child('players').on('child_removed', s=>{
-              delete players[s.key]; emit('leave', s.key);
-            });
-            fbRef.child('players').on('child_changed', s=>{
-              const d = s.val(); if(!d || s.key===myId) return;
-              players[s.key] = {...players[s.key], ...d, id:s.key};
-              emit('update', players[s.key]);
-            });
-            fbRef.child('chat').limitToLast(1).on('child_added', s=>{
-              const d = s.val(); if(d) emit('chat', d);
-            });
-            resolve();
-          } catch(e){ reject(e); }
-        };
-        document.head.appendChild(s2);
-      };
+      s.src = src; s.onload = res; s.onerror = ()=> rej(new Error('Không tải được ' + src));   // offline/bị chặn -> reject để fallback local, không treo init
       document.head.appendChild(s);
     });
+  }
+  let chatQ = null;
+  function fbDetach(){
+    try { if(fbRef) fbRef.child('players').off(); if(chatQ) chatQ.off(); } catch(e){}
+    fbRef = null; chatQ = null;
+  }
+  async function initFirebase(player){
+    await loadScript("https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js");
+    await loadScript("https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js");
+    firebase.initializeApp(GCITY_CONFIG.FIREBASE);
+    fbRef = firebase.database().ref('gcity');
+
+    // Đổi id 'me' -> 'p_xxx' PHẢI đổi luôn khoá trong players, nếu không bản ghi 'me' còn sót lại
+    // sẽ lọt vào getPlayers() (lọc theo myId) và bạn bị nhân đôi thành một người chơi khác; sendChat cũng đọc players[myId].
+    const oldId = myId;
+    myId = 'p_' + Math.random().toString(36).substr(2,8);
+    const self = players[oldId] || player;
+    delete players[oldId]; self.id = myId; players[myId] = self;
+
+    const meRef = fbRef.child('players/'+myId);
+    meRef.set({ name:player.name, gender:player.gender, charIndex:player.charIndex, x:player.x, y:player.y, dir:0, ts:Date.now() });
+    meRef.onDisconnect().remove();
+    // listen
+    fbRef.child('players').on('child_added', s=>{
+      const d = s.val(); if(!d || s.key===myId) return;
+      players[s.key] = cleanPlayer(d, s.key);
+      emit('join', players[s.key]);
+    });
+    fbRef.child('players').on('child_removed', s=>{
+      delete players[s.key]; emit('leave', s.key);
+    });
+    fbRef.child('players').on('child_changed', s=>{
+      const d = s.val(); if(!d || s.key===myId) return;
+      players[s.key] = cleanPlayer({ ...players[s.key], ...d }, s.key);
+      emit('update', players[s.key]);
+    });
+    // limitToLast(1) phát lại tin cuối cùng đã có sẵn ngay khi gắn listener -> bỏ qua lượt đó.
+    // Firebase đảm bảo mọi child_added ban đầu chạy TRƯỚC sự kiện 'value' của cùng query, nên cờ chatReady
+    // bật ở once('value') chặn đúng tin cũ mà không phụ thuộc đồng hồ máy (so ts sẽ sai khi lệch giờ).
+    let chatReady = false;
+    chatQ = fbRef.child('chat').limitToLast(1);
+    chatQ.on('child_added', s=>{
+      if(!chatReady) return;
+      const d = s.val(); if(d) emit('chat', cleanChat(d));
+    });
+    chatQ.once('value').then(()=>{ chatReady = true; });   // KHÔNG await: offline thì once('value') treo, kéo theo Net.init (và cả vào game) treo
   }
 
   return {
@@ -112,7 +138,7 @@ const Net = (() => {
       myId = 'me';
       players[myId] = player;
       if(mode==='firebase'){
-        return initFirebase(player).catch(e=>{ console.warn('Firebase failed, fallback to local', e); mode='local'; spawnBots(); });
+        return initFirebase(player).catch(e=>{ console.warn('Firebase failed, fallback to local', e); fbDetach(); mode='local'; spawnBots(); });
       } else {
         spawnBots();
         return Promise.resolve();
@@ -125,9 +151,11 @@ const Net = (() => {
       }
     },
     sendChat(text){
-      const msg = { id:myId, name: players[myId].name, text, ts:Date.now() };
-      if(mode==='firebase' && fbRef){ fbRef.child('chat').push(msg); }
-      emit('chat', msg);
+      const msg = { id:myId, name: (players[myId] || {}).name || 'Player', text: clampStr(text, 200), ts:Date.now() };
+      // Firebase: chỉ push. child_added sẽ bắn lại NGAY trên máy mình (SDK phát sự kiện cục bộ trước khi server xác nhận),
+      // nên emit thêm ở đây sẽ làm tin hiện hai lần. Chế độ local mới cần emit trực tiếp.
+      if(mode==='firebase' && fbRef) fbRef.child('chat').push(msg);
+      else emit('chat', msg);
     },
     onPlayerJoin(cb){ cbs.join.push(cb); },
     onPlayerLeave(cb){ cbs.leave.push(cb); },

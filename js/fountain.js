@@ -171,7 +171,8 @@ const Fountain = (() => {
       geo.attributes.position.needsUpdate = true;
     }
 
-    return { group: root, update };
+    // glow: các vật liệu sẽ sáng lên ban đêm (nước + vàng ánh sáng)
+    return { group: root, update, glow: [water, gold] };
   }
 
   return { create, RADIUS, SCALE, POOL_Y, MID_Y, TOP_Y };

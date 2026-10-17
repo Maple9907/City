@@ -407,7 +407,66 @@ const GChar = (() => {
     const parts = {};
     ['body','head','armL','armR','foreL','foreR','legL','legR','shinL','shinR','eyeL','eyeR','tail','tailL','tailR'].forEach(n => { const o = g.getObjectByName(n); if(o) parts[n] = o; });
     g.userData.def = protoCache[key].userData.def;
+    attachGear(g, parts);
     return { group:g, parts, def:g.userData.def };
+  }
+
+  // ====================== ĐỒ CÂU (cần + dây + phao) ======================
+  // Cần gắn vào cẳng tay phải (foreR) nên đi theo tay; dây câu vẽ mỗi khung từ đầu cần
+  // xuống phao (điểm cố định phía trước nhân vật) — nhìn đúng như đang câu.
+  const GEAR = { tipY: 0.06, tipZ: 2.92, floatX: 0.1, floatY: 0.30, floatZ: 3.4 };
+  function attachGear(g, p){
+    if(!p.foreR) return;
+    // trục cần nằm ngang ngang tay (trục +z), chĩa ra trước
+    const rod = T(); rod.name = 'rod';
+    cyl(rod, 0.055, 0.085, 1.45, 0x8a5a32, 0, 0, 0.72, PI/2, 0, 0);        // cán
+    cyl(rod, 0.030, 0.055, 1.00, 0xa87b4a, 0, 0.05, 2.42, PI/2, 0, 0);      // đoạn thân mảnh dần
+    cyl(rod, 0.13, 0.13, 0.17, 0x4a5568, 0, -0.15, 0.22, PI/2, 0, 0);       // cuộn dây
+    cyl(rod, 0.045, 0.045, 0.22, 0xd8d2c4, 0, -0.15, 0.22, 0, 0, PI/2);    // tay quay
+    tor(rod, 0.07, 0.018, 0x6b7280, 0, 0.02, 1.32, PI/2, 0, 0);            // khoen dây
+    tor(rod, 0.055, 0.015, 0x6b7280, 0, 0.05, 2.66, PI/2, 0, 0);
+    rod.rotation.set(-0.06, 0, 0);         // hơi ngẩng
+    rod.position.set(0, -0.5, 0.05);
+    p.foreR.add(rod);
+
+    const lineMat = new THREE.MeshBasicMaterial({ color:0xf2efe2, transparent:true, opacity:0.8 });
+    const mk = ()=>{ const m = new THREE.Mesh(new THREE.CylinderGeometry(0.013, 0.013, 1, 4), lineMat); m.visible = false; g.add(m); return m; };
+    const seg1 = mk(), seg2 = mk();
+
+    const flt = T();
+    sph(flt, 0.095, 0xe8503c, 0, 0.10, 0, 1, 1, 1, 8);
+    sph(flt, 0.095, 0xfdf6e8, 0, -0.03, 0, 1, 1, 1, 8);
+    cyl(flt, 0.012, 0.012, 0.34, 0x6b7280, 0, 0.26, 0, 0, 0, 0, 4);
+    flt.visible = false; g.add(flt);
+
+    p.rod = rod; p.rodSeg = [seg1, seg2]; p.rodFloat = flt;
+  }
+  const _tipW = new THREE.Vector3(), _tipL = new THREE.Vector3(), _fl = new THREE.Vector3(), _mid = new THREE.Vector3(),
+        _dir = new THREE.Vector3(), _q = new THREE.Quaternion(), _UP = new THREE.Vector3(0,1,0);
+  // Cập nhật dây + phao: đầu cần (world → local) → điểm câu trước mặt, có độ chùng khi cá đớp
+  function updateGear(g, p, ud, t, sag){
+    const rod = p.rod; if(!rod) return;
+    const a = ud.action;
+    const on = (a === 'fish' || a === 'cast' || a === 'reel' || a === 'bite');
+    rod.visible = on;
+    if(!on){ p.rodSeg.forEach(m=>m.visible=false); p.rodFloat.visible = false; return; }
+    g.updateMatrixWorld(true);
+    _tipW.set(0, GEAR.tipY, GEAR.tipZ); rod.localToWorld(_tipW); _tipL.copy(_tipW); g.worldToLocal(_tipL);
+    const yaw = ud.yaw || 0, dist = a==='cast' ? 1.9 : GEAR.floatZ;
+    _fl.set(GEAR.floatX, GEAR.floatY, dist).applyAxisAngle(_UP, yaw);
+    _mid.copy(_fl); _mid.y -= sag * (a==='bite' ? 0.18 : 0.42);      // dây chùng
+    [[_tipL, _mid], [_mid, _fl]].forEach((pair, i) => {
+      const m = p.rodSeg[i];
+      _dir.copy(pair[1]).sub(pair[0]);
+      const len = _dir.length() || 0.001;
+      m.position.copy(pair[0]).addScaledVector(_dir, 0.5);
+      m.scale.set(1, len, 1);
+      m.quaternion.setFromUnitVectors(_UP, _dir.normalize());
+      m.visible = true;
+    });
+    p.rodFloat.visible = true;
+    p.rodFloat.position.copy(_fl);
+    p.rodFloat.position.y = GEAR.floatY + (a==='bite' ? Math.abs(Math.sin(t*9))*0.12 : Math.sin(t*1.6)*0.03);
   }
 
   // ====================== ANIMATION ======================
@@ -459,11 +518,27 @@ const GChar = (() => {
         p.shinL.rotation.x = 0.9*Math.sin(u*PI); p.shinR.rotation.x = 0.9*Math.sin(u*PI);
         p.armL.rotation.set(-2.6*Math.sin(u*PI), 0, 0.3); p.armR.rotation.set(-2.6*Math.sin(u*PI), 0, -0.3);
       } else if(a === 'sit'){
-        group.position.y = 0.05;
-        p.legL.rotation.x = -1.5; p.legR.rotation.x = -1.5; p.shinL.rotation.x = 1.45; p.shinR.rotation.x = 1.45;
-        p.armL.rotation.set(-0.5, 0, 0.12); p.armR.rotation.set(-0.5, 0, -0.12);
-        p.foreL.rotation.x = -1.0; p.foreR.rotation.x = -1.0;
-        p.body.rotation.x = 0.04;
+        // ngồi ghế: hông đúng mặt ghế, đùi ngang, cẳng chân thẳng xuống, tay đặt trên đùi
+        const br = Math.sin(tt*1.5)*0.012;                       // thở nhẹ khi ngồi
+        group.position.y = 0.06 + br;
+        p.legL.rotation.set(-1.44, 0, 0.10); p.legR.rotation.set(-1.44, 0, -0.10);
+        p.shinL.rotation.set(1.34, 0, 0);      p.shinR.rotation.set(1.34, 0, 0);
+        p.armL.rotation.set(-0.66, 0, 0.17);   p.armR.rotation.set(-0.66, 0, -0.17);
+        p.foreL.rotation.set(-0.98, 0, 0);     p.foreR.rotation.set(-0.98, 0, 0);
+        p.body.rotation.set(0.10 + br, 0, 0);
+        p.head.rotation.set(-0.05, Math.sin(tt*0.7)*0.07, 0);
+        if(p.tail) p.tail.rotation.set(0.35, 0, Math.sin(tt*1.2)*0.05);
+      } else if(a === 'ride'){
+        // ngồi xe / cabin: thân hơi cúi, đùi vuông góc, hai tay chống ra trước (vô-lăng / lan can)
+        const br = Math.sin(tt*2.4)*0.008;
+        group.position.y = br;
+        p.legL.rotation.set(-1.52, 0, 0.13); p.legR.rotation.set(-1.52, 0, -0.13);
+        p.shinL.rotation.set(1.46, 0, 0);     p.shinR.rotation.set(1.46, 0, 0);
+        p.armL.rotation.set(-1.18, 0, 0.30);   p.armR.rotation.set(-1.18, 0, -0.30);
+        p.foreL.rotation.set(-0.52, 0, 0);     p.foreR.rotation.set(-0.52, 0, 0);
+        p.body.rotation.set(0.16 + br, 0, 0);
+        p.head.rotation.set(0.04, 0, 0);
+        if(p.tail) p.tail.rotation.set(0.5, 0, Math.sin(tt*2)*0.06);
       } else if(a === 'wave'){
         p.armR.rotation.set(-2.7, 0, -0.25 + Math.sin(t*9)*0.12);
         p.foreR.rotation.x = -0.3 + Math.sin(t*9)*0.4;
@@ -489,7 +564,29 @@ const GChar = (() => {
         p.foreL.rotation.x = -0.2; p.foreR.rotation.x = -0.2;
         group.position.y = Math.abs(Math.sin(t*8))*0.2;
       }
+      // ---------- CÂU CÁ: tay phải cầm cần chĩa ra trước, tay trái đặt lên cuộn dây ----------
+      else if(a === 'fish' || a === 'bite' || a === 'reel' || a === 'cast'){
+        const tug = a === 'bite' ? Math.max(0, Math.sin(t*9)) : 0;
+        const pull = a === 'reel' ? Math.sin(t*11) : 0;
+        const cast = a === 'cast' ? Math.max(0, 1 - (t % 2)/0.8) : 0;    // vung tay quăng cần
+        // chân: đứng vững hơi khoảng cách, thân hơi cúi về phía trước
+        p.legL.rotation.x = -0.12 - tug*0.06; p.legR.rotation.x = 0.1;
+        p.shinL.rotation.x = 0.1; p.shinR.rotation.x = 0.06;
+        p.body.rotation.x = 0.16 + tug*0.05 + pull*0.03;
+        p.body.rotation.y = -0.12;
+        // tay phải: đưa cần lên cao, hơi chĩa sang phải; khi cá giật thì cần bật xuống
+        p.armR.rotation.set(-0.48 - cast*1.45 + tug*0.30 - pull*0.18, 0, -0.40 - cast*0.45);
+        p.foreR.rotation.set(-0.02 + cast*0.85 - tug*0.34 + pull*0.40, 0, 0.12);
+        // tay trái: đặt lên cuộn dây, quay nhẹ khi kéo
+        p.armL.rotation.set(-0.72 + tug*0.16, 0, 0.34);
+        p.foreL.rotation.set(-0.62 + pull*0.5, 0, -0.42);
+        p.head.rotation.x = 0.18 - tug*0.06;
+        p.head.rotation.y = 0.12;
+      }
     }
+    // dây câu + phao (vẽ sau khi pose để đầu cần đúng chỗ)
+    const sag = ud.action === 'bite' ? 1 : (ud.action === 'reel' ? 0.5 : (ud.action === 'cast' ? 0.2 : 0.8));
+    updateGear(group, p, ud, time, sag);
   }
 
   // ====================== ẢNH XEM TRƯỚC (màn chọn nhân vật) ======================

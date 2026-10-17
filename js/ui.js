@@ -9,7 +9,7 @@ const UI = (() => {
 
   function $(id){ return document.getElementById(id); }
   // Chặn mọi click vào bất kỳ panel nào trong 500ms tới — tránh trường hợp ngón tay vừa chạm
-  // vào NPC mở menu thì ngay lập tức "nhấn" luôn nút bên trong (đánh lô tự quay, đua thú tự mua vé…).
+  // vào NPC mở menu thì ngay lập tức "nhấn" luôn nút bên trong (quay số tự chạy, đua thú tự mua vé…).
   function guardTap(){ _guardUntil = Date.now() + 500; }
   document.addEventListener('click', e=>{
     if(!_guardUntil || Date.now() >= _guardUntil) return;
@@ -66,6 +66,9 @@ const UI = (() => {
       grid.appendChild(card);
     });
   }
+  // Chế độ ĐỔI nhân vật (đang chơi): khoá giới tính, có nút ✕ và Esc để đóng.
+  // Lần chọn đầu tiên (chưa có nhân vật) thì không đóng được.
+  let switching = null;   // { name, cb } khi đang đổi nhân vật
   function initCharSelect(cb){
     onEnterGame = cb;
     document.querySelectorAll('.gender-tab').forEach(tab=>{
@@ -78,12 +81,54 @@ const UI = (() => {
     });
     renderCharGrid();
     $('enterGameBtn').onclick = ()=>{
-      const name = $('charName').value.trim() || 'Player';
-      onEnterGame({ name, gender: selectedGender, charIndex: selectedChar });
+      const typed = $('charName').value.trim();
+      if(switching){
+        const { name:old, cb:done } = switching, gd = selectedGender, ci = selectedChar;
+        closeCharSwitch();
+        done({ name: typed || old, gender: gd, charIndex: ci });
+      } else onEnterGame({ name: typed || 'Player', gender: selectedGender, charIndex: selectedChar });
     };
+    $('charClose').onclick = closeCharSwitch;
+  }
+  function openCharSwitch(cur, done){
+    switching = { name: cur.name, cb: done };
+    selectedGender = cur.gender; selectedChar = cur.charIndex;
+    document.querySelectorAll('.gender-tab').forEach(t=>{ t.style.display = 'none'; });
+    $('charName').value = cur.name;
+    $('enterGameBtn').textContent = 'Đổi nhân vật';
+    $('charClose').classList.remove('hidden');
+    renderCharGrid();
+    $('charSelect').classList.remove('hidden');
+  }
+  function closeCharSwitch(){   // true nếu vừa đóng hộp đổi nhân vật
+    if(!switching) return false;
+    switching = null;
+    $('charSelect').classList.add('hidden');
+    $('charClose').classList.add('hidden');
+    $('enterGameBtn').textContent = 'Vào thành phố';
+    document.querySelectorAll('.gender-tab').forEach(t=>{ t.style.display = ''; });
+    return true;
   }
   function showCharSelect(){ $('charSelect').classList.remove('hidden'); }
   function hideCharSelect(){ $('charSelect').classList.add('hidden'); $('gameScreen').classList.remove('hidden'); }
+
+  // ---- Hộp xác nhận (vd: thoát game) ----
+  function askConfirm(msg, okText, onOk){
+    $('confirmMsg').textContent = msg;
+    $('confirmYes').textContent = okText || 'Đồng ý';
+    $('confirmYes').onclick = ()=>{ closeConfirm(); if(onOk) onOk(); };
+    $('confirmNo').onclick = closeConfirm;
+    $('confirmBox').classList.remove('hidden');
+  }
+  function closeConfirm(){   // true nếu vừa đóng
+    const b = $('confirmBox');
+    if(b.classList.contains('hidden')) return false;
+    b.classList.add('hidden'); return true;
+  }
+  // Số xu có dấu chấm phân cách (1.234.567) — dùng chung cho HUD và Túi đồ
+  const fmt = n => String(Math.floor(Number(n) || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  // Một câu duy nhất cho mọi lần thiếu xu
+  const NO_COIN = 'Bạn không đủ xu để thực hiện giao dịch này.';
 
   // ---- Panels ----
   function togglePanel(id){
@@ -98,10 +143,9 @@ const UI = (() => {
     document.querySelectorAll('.panel').forEach(x=>x.classList.add('hidden'));
     $(id).classList.remove('hidden');
   }
-  // Mở cửa hàng ở đúng tab (cinema | lottery | rental), tô sáng tab tương ứng
+  // Mở cửa hàng đúng dịch vụ (lottery | rental)
   function openShop(tab){
     openPanel('shopPanel');
-    document.querySelectorAll('.shop-tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===tab));
     renderShop(tab);
   }
 
@@ -119,7 +163,6 @@ const UI = (() => {
     $('btnChat').onclick = ()=> togglePanel('chatPanel');
     $('btnInventory').onclick = ()=> { togglePanel('inventoryPanel'); renderInventory(callbacks.getPlayer()); };
     $('btnPlayers').onclick = ()=> { togglePanel('playersPanel'); callbacks.refreshPlayers(); };
-    ($('btnMap')||{}).onclick = ()=> toast('Bản đồ: Quảng trường ở giữa, đảo câu cá ở cổng tàu phía dưới.');
 
     // chat
     $('chatSend').onclick = sendChat;
@@ -142,14 +185,6 @@ const UI = (() => {
       btn.onclick = ()=> onAction('buyBait', { bait: btn.dataset.bait, price: parseInt(btn.dataset.price) });
     });
 
-    // shop tabs
-    document.querySelectorAll('.shop-tab').forEach(tab=>{
-      tab.onclick = ()=>{
-        document.querySelectorAll('.shop-tab').forEach(t=>t.classList.remove('active'));
-        tab.classList.add('active');
-        renderShop(tab.dataset.tab);
-      };
-    });
   }
 
   function sendChat(){
@@ -163,22 +198,27 @@ const UI = (() => {
     const hist = $('chatHistory');
     const div = document.createElement('div');
     div.className = 'chat-msg';
-    div.innerHTML = `<span class="chat-who${isSystem?' system':''}">${name}:</span><span>${text}</span>`;
+    // name/text đến từ người chơi khác (Firebase) -> TUYỆT ĐỐI không đưa vào innerHTML, dùng textContent
+    const who = document.createElement('span');
+    who.className = 'chat-who' + (isSystem ? ' system' : '');
+    who.textContent = name + ':';
+    const msg = document.createElement('span');
+    msg.textContent = text;
+    div.append(who, msg);
     hist.appendChild(div);
     hist.scrollTop = hist.scrollHeight;
   }
 
-  // ---- Shop content (lottery / rental) — rạp phim đã bỏ, mỗi NPC mở đúng dịch vụ của mình ----
+  // ---- Shop content (lottery / rental): mỗi toà / NPC mở đúng dịch vụ của mình ----
   function renderShop(tab){
-    if(tab==='cinema') tab = 'rental';
     const c = $('shopContent');
     if(tab==='lottery'){
       c.innerHTML = `
         <div class="shop-service">
           <h4>🎰 Vé số City</h4>
-          <p>Chọn 3 số. Trúng giải thưởng lên đến 1000🪙! Vé: 10🪙</p>
+          <p>Chọn 3 số. Trúng giải thưởng lên đến 1000 xu! Vé: 10 xu</p>
           <input id="lottoNum" type="text" maxlength="3" placeholder="VD: 123" style="width:100%;padding:8px;background:#1e1e30;border:1px solid #2a2a44;border-radius:6px;color:#fff;margin-bottom:8px;text-align:center;font-size:18px;letter-spacing:4px;" />
-          <button class="btn-primary" id="buyLotto">Mua vé (10🪙)</button>
+          <button class="btn-primary" id="buyLotto">Mua vé (10 xu)</button>
         </div>
         <div class="shop-service">
           <h4>📊 Kết quả gần nhất</h4>
@@ -189,13 +229,13 @@ const UI = (() => {
       c.innerHTML = `
         <div class="shop-service">
           <h4>🎿 Giày trượt (tăng tốc 30s)</h4>
-          <p>Giá: 15🪙</p>
-          <button class="btn-secondary" id="rentSkate">Thuê giày (15🪙)</button>
+          <p>Giá: 15 xu</p>
+          <button class="btn-secondary" id="rentSkate">Thuê giày (15 xu)</button>
         </div>
         <div class="shop-service">
           <h4>🎣 Cần câu cao cấp</h4>
-          <p>Tăng tỉ lệ cá lớn. Giá: 100🪙</p>
-          <button class="btn-secondary" id="buyRod">Mua cần (100🪙)</button>
+          <p>Tăng tỉ lệ cá lớn. Giá: 100 xu</p>
+          <button class="btn-secondary" id="buyRod">Mua cần (100 xu)</button>
         </div>`;
       $('rentSkate').onclick = ()=> onAction('rentSkate');
       $('buyRod').onclick = ()=> onAction('buyRod');
@@ -205,16 +245,16 @@ const UI = (() => {
   // ---- Thuê xe / máy bay (NPC Tài Xế): list = [{i, kind, name, cssColor, price, taken}] ----
   function renderVehicleShop(list){
     const c = $('vehicleList');
-    const sec = (kind, title, note) => {
+    const sec = (kind, title) => {
       const items = list.filter(v=>v.kind===kind);
-      return `<div class="veh-title">${title} <small>${note}</small></div><div class="veh-grid">` + items.map(v=>`
+      return `<div class="veh-title">${title}</div><div class="veh-grid">` + items.map(v=>`
         <button class="veh-card${v.taken?' taken':''}" data-slot="${v.i}" ${v.taken?'disabled':''}>
           <span class="veh-pic" style="background:${v.cssColor}">${kind==='plane'?'✈️':'🚗'}</span>
           <b>${v.name}</b>
-          <small>${v.taken ? 'Đang có người thuê' : v.price+'🪙 · 5 phút'}</small>
+          <small>${v.taken ? 'Đang có người thuê' : v.price+' xu · 5 phút'}</small>
         </button>`).join('') + `</div>`;
     };
-    c.innerHTML = sec('car','🚗 Xe mui trần','(ngồi lái thật)') + sec('plane','✈️ Máy bay','(có nút Bay lên / Hạ cánh)') +
+    c.innerHTML = sec('car','🚗 Xe mui trần') + sec('plane','✈️ Máy bay') +
       `<div class="mg-info">Chạm vào xe muốn thuê, nhân vật sẽ lên ngồi luôn. Xuống xe là xe tự về bãi.</div>`;
     c.querySelectorAll('[data-slot]').forEach(b=> b.onclick = ()=> onAction('rentVehicle', { slot:+b.dataset.slot }));
   }
@@ -223,13 +263,12 @@ const UI = (() => {
   function renderInventory(p){
     const c = $('inventoryContent'); c.innerHTML='';
     const items = [
-      { icon:'🪙', name:'Tiền', count:p.coins },
+      { icon:'🪙', name:'Xu', count:fmt(p.coins) },
       { icon:'🐟', name:'Cá', count:p.inventory.fish },
       { icon:'🪱', name:'Giun', count:p.inventory.worm },
       { icon:'🦐', name:'Tép', count:p.inventory.shrimp },
       { icon:'✨', name:'Mồi giả', count:p.inventory.lure },
-      { icon:'🎣', name:'Cần', count:p.inventory.rod },
-      { icon:'🎫', name:'Vé phim', count:p.inventory.ticket },
+      { icon:'🎣', name:(p.inventory.rod>=2 ? 'Cần cao cấp' : 'Cần cơ bản'), count:1 },
     ];
     items.forEach(it=>{
       const slot = document.createElement('div');
@@ -245,7 +284,9 @@ const UI = (() => {
     list.forEach(p=>{
       const row = document.createElement('div');
       row.className='player-row';
-      row.innerHTML = `<span class="player-dot"></span><span>${p.name}</span>`;
+      const dot = document.createElement('span'); dot.className = 'player-dot';
+      const nm = document.createElement('span'); nm.textContent = p.name;
+      row.append(dot, nm);
       c.appendChild(row);
     });
     $('playerCount').textContent = list.length + 1;
@@ -254,7 +295,7 @@ const UI = (() => {
   // ---- HUD update ----
   function updateHUD(p){
     $('hudName').textContent = p.name;
-    $('hudCoin').textContent = String(Math.floor(p.coins)).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    $('hudCoin').textContent = fmt(p.coins);
     $('hudZone').textContent = (Scene3D.getZone(p.zone)||{}).name || '';
     $('fishCount').textContent = p.inventory.fish;
     const bait = p.inventory.lure>0?`Mồi giả (${p.inventory.lure})`:(p.inventory.shrimp>0?`Tép (${p.inventory.shrimp})`:`Giun (${p.inventory.worm})`);
@@ -299,7 +340,8 @@ const UI = (() => {
     window.addEventListener('mouseup', end);
   }
 
-  return { setLoading, hideLoading, initCharSelect, showCharSelect, hideCharSelect,
+  return { setLoading, hideLoading, initCharSelect, openCharSwitch, closeCharSwitch, showCharSelect, hideCharSelect,
+    askConfirm, closeConfirm, fmt, NO_COIN,
     togglePanel, closePanel, openPanel, openShop, initPanels, addChat, updateHUD, toast, initJoystick,
     renderInventory, renderPlayers, renderShop, renderVehicleShop, guardTap };
 })();

@@ -6,11 +6,11 @@
 const GCITY_CONFIG = {
   USE_FIREBASE: false,  // đổi thành true khi đã cấu hình Firebase
 
-  // Tìm video YouTube bằng cách gõ tên (NPC 📺 Anh Chiếu Màn). Để trống "" = chỉ dán link được.
-  // Lấy key miễn phí: Google Cloud Console -> bật "YouTube Data API v3" -> tạo API key,
-  // rồi giới hạn key theo HTTP referrer (tên miền web của bạn) để người khác không dùng ké.
-  YOUTUBE_API_KEY: "AIzaSyC-WpmofuFqCZB12C2B8fKOL_85qfLJTSg",
-
+  // Tìm video YouTube bằng cách gõ tên (NPC 📺 Anh Chiếu Màn).
+  // KHÔNG chứa key ở đây. Key thật do GitHub Actions chèn vào js/keys.js lúc deploy,
+  // đọc qua YTKEYS (xoay vòng nhiều key — mỗi key miễn phí ~100 lượt tìm/ngày).
+  // Chạy local không có key vẫn chơi được, chỉ dán link video thay vì gõ từ khoá.
+  YOUTUBE: { KEYS_FILE:'js/keys.js', GLOBAL:'GCITY_KEYS' },
   FIREBASE: {
     apiKey: "YOUR_API_KEY",
     authDomain: "your-project.firebaseapp.com",

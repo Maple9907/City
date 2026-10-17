@@ -1,43 +1,68 @@
 /* ===== GCITY Park: màn hình lớn chiếu YouTube + mini game =====
  * - Video YouTube là iframe HTML, được "dán" lên màn hình 3D bằng CSS matrix3d (homography
  *   từ 4 góc màn hình đã project ra màn hình 2D) nên xoay camera video vẫn bám theo.
- * - Mini game: Lật hình (phí 5🪙), Đánh lô (tự đặt xu, 10 giải quay độc lập).
+ * - Mini game: Lật hình (phí 5 xu), Quay số may mắn (tự chọn số xu, 10 lượt quay độc lập).
  */
 const Park = (() => {
   const $ = id => document.getElementById(id);
   const FW = 960, FH = 540;
   let player = null, frame = null, videoId = null, lastZone = null;
+  // Ván đang dở: nếu đóng tab giữa chừng thì lần sau vào game sẽ được trả kết quả (quay số) / hoàn xu (lật hình) — không mất xu oan.
+  const pend = { lo:null, mem:0 };
+  const save = () => window.dispatchEvent(new Event('gcity-save'));   // game.js lưu ngay, không chờ vòng lưu 2s
+  function getPending(){ return (pend.lo || pend.mem) ? { lo:pend.lo, mem:pend.mem } : null; }
+  function settlePending(d){
+    if(!d || !player) return;
+    const msg = [], lo = d.lo;
+    if(lo && Array.isArray(lo.res) && lo.res.length === LO.PRIZES && lo.bet >= 1 && lo.bet <= LO.MAX && lo.pick >= 1 && lo.pick <= 99){
+      const hits = lo.res.filter(v => v === lo.pick).length, win = Math.floor(lo.bet) * LO.MULT * hits;
+      player.coins += win;
+      msg.push(hits ? `Ván quay số dở lần trước đã có kết quả: trúng ${hits} giải, +${nf(win)} xu` : 'Ván quay số dở lần trước đã có kết quả: không trúng');
+    }
+    if(d.mem > 0 && d.mem <= 100){ player.coins += Math.floor(d.mem); msg.push(`Hoàn ${Math.floor(d.mem)} xu ván lật hình dở`); }
+    if(msg.length){ UI.updateHUD(player); UI.toast(msg.join(' · ')); }
+  }
 
-  // ---------- Trường đua thú: 7 bạn thú · cược 1 ăn 6 · mở vé 30s -> đua ~10s -> kết quả 7s ----------
+  // ---------- Trường đua thú: 7 bạn thú · thưởng ×6 · mở vé 30s -> đua ~10s -> kết quả 7s ----------
   const AN=['🐎 Ngựa Đỏ','🐕 Chó Xanh','🐇 Thỏ Vàng','🐢 Rùa Tím','🦊 Cáo Cam','🐖 Heo Hồng','🐸 Ếch Xanh Lá'], N=AN.length, MULT=6;
-  const RC={id:206453,ph:'open',t:30,tk:null,p:AN.map(()=>0),v:[],w:-1,fee:10,acc:0};
+  const RC={id:206453,ph:'open',t:30,rt:0,tk:null,p:AN.map(()=>0),v:[],o:[],w:-1,fee:10,acc:0};   // t: đếm lùi pha open/end · rt: thời gian chạy · o: pha dao động ngẫu nhiên của từng thú
   const dot = i => `<span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:${Animals.LANE_CSS[i]};margin-right:6px;border:1px solid #fff6"></span>`;
   let raceT = 0;
   function raceStep(dt){
-    RC.t -= dt;
-    if(RC.ph==='open' && RC.t<=0){ RC.ph='run'; RC.p=AN.map(()=>0); RC.v=AN.map(()=>.085+Math.random()*.05); RC.t=0; }
+    // Mỗi pha dùng đồng hồ riêng. Bản cũ trừ dt ở đầu hàm rồi cộng lại trong pha run -> RC.t luôn = 0,
+    // sin(RC.t*2+i*2) thành hằng số = mức cộng/trừ tốc độ cố định cho từng thú (Cáo/Chó thắng ~87%).
+    // Pha dao động cũng phải ngẫu nhiên mỗi ván (RC.o): nếu giữ i*2 cố định thì tích phân sin trong ~9s vẫn lệch
+    // theo từng thú (Ngựa/Rùa/Ếch ~18% > 16,7% hoà vốn của thưởng x6 -> vẫn có con +EV).
+    if(RC.ph==='open'){
+      RC.t -= dt;
+      if(RC.t<=0){ RC.ph='run'; RC.rt=0; RC.p=AN.map(()=>0); RC.v=AN.map(()=>.085+Math.random()*.05); RC.o=AN.map(()=>Math.random()*Math.PI*2); }
+    }
     else if(RC.ph==='run'){
-      RC.t += dt; AN.forEach((_,i)=>{ RC.p[i] += (RC.v[i] + Math.sin(RC.t*2+i*2)*.02)*dt; });
+      RC.rt += dt;
+      AN.forEach((_,i)=>{ RC.p[i] += (RC.v[i] + Math.sin(RC.rt*2+RC.o[i])*.02)*dt; });
       const m = Math.max(...RC.p);
       if(m>=1){ RC.w=RC.p.indexOf(m); RC.ph='end'; RC.t=7;
-        if(RC.tk===RC.w){ const win=Math.round(RC.fee*MULT); player.coins+=win; UI.updateHUD(player); UI.toast(`🎉 Trúng vé đua! +${win}🪙`); }
+        if(RC.tk===RC.w){ const win=Math.round(RC.fee*MULT); player.coins+=win; UI.updateHUD(player); UI.toast(`🎉 Trúng vé đua! +${win} xu`); }
         else if(RC.tk!==null) UI.toast('Vé đua không trúng, chúc may mắn!'); }
     }
-    else if(RC.ph==='end' && RC.t<=0){ RC.ph='open'; RC.t=30; RC.id++; RC.tk=null; RC.p=AN.map(()=>0); RC.w=-1; }
+    else if(RC.ph==='end'){
+      RC.t -= dt;
+      if(RC.t<=0){ RC.ph='open'; RC.t=30; RC.id++; RC.tk=null; RC.p=AN.map(()=>0); RC.w=-1; }
+    }
     RC.acc += dt;
     if(RC.acc>=.5){ RC.acc=0;
       const st = RC.ph==='open' ? `Đang mở vé ${Math.ceil(RC.t)} giây` : RC.ph==='run' ? 'Đang đua!' : `Thắng: ${AN[RC.w]}`;
-      Scene3D.setRaceBoard(`Sơ Cấp · Phiên #${RC.id} · 7 thú · 1 ăn ${MULT}`,'VÉ CỦA BẠN', RC.tk===null ? 'Chưa mua vé phiên này' : AN[RC.tk],'TRẠNG THÁI',st); }
+      Scene3D.setRaceBoard(`Đua thú · 7 thú · thưởng ×${MULT}`,'VÉ CỦA BẠN', RC.tk===null ? 'Chưa mua vé ván này' : AN[RC.tk],'TRẠNG THÁI',st); }
     Scene3D.setRacers(RC.p, RC.ph==='run', RC.ph==='end' ? RC.w : -1);
   }
   function openRace(){
     const b = showGamePanel('🎟 Trường đua thú');
-    if(RC.ph!=='open'){ b.innerHTML = `<div class="mg-info">${RC.ph==='run' ? 'Đang đua, chờ phiên sau để mua vé.' : 'Phiên đã kết thúc, chờ phiên mới.'}</div>`; return; }
-    if(RC.tk!==null){ b.innerHTML = `<div class="mg-info">Vé của bạn: ${dot(RC.tk)}${RC.tk+1}. ${AN[RC.tk]} (phiên #${RC.id}). Về nhất nhận x${MULT}.</div>`; return; }
-    b.innerHTML = AN.map((n,i)=>`<button class="shop-item" data-a="${i}">${dot(i)}${i+1}. ${n} — ${RC.fee}🪙</button>`).join('') + `<div class="mg-info">Chọn một trong 7 bạn thú, về nhất ăn x${MULT} tiền vé (cược 1 ăn ${MULT}).</div>`;
+    if(RC.ph!=='open'){ b.innerHTML = `<div class="mg-info">${RC.ph==='run' ? 'Đang đua, chờ ván sau để mua vé.' : 'Ván đua đã kết thúc, chờ ván mới.'}</div>`; return; }
+    if(RC.tk!==null){ b.innerHTML = `<div class="mg-info">Vé của bạn: ${dot(RC.tk)}${RC.tk+1}. ${AN[RC.tk]}. Về nhất nhận thưởng x${MULT}.</div>`; return; }
+    b.innerHTML = AN.map((n,i)=>`<button class="shop-item" data-a="${i}">${dot(i)}${i+1}. ${n} — ${RC.fee} xu</button>`).join('') + `<div class="mg-info">Chọn một trong 7 bạn thú, về nhất được thưởng x${MULT} tiền vé.</div>`;
     b.querySelectorAll('[data-a]').forEach(btn=> btn.onclick = ()=>{
       if(RC.ph!=='open') return openRace();
-      if(player.coins<RC.fee){ UI.toast(`Cần ${RC.fee}🪙`); return; }
+      if(player.coins<RC.fee){ UI.toast(UI.NO_COIN); return; }
       player.coins -= RC.fee; RC.tk = +btn.dataset.a; UI.updateHUD(player); UI.toast('Đã mua vé 🎟'); openRace();
     });
   }
@@ -45,7 +70,8 @@ const Park = (() => {
   // ---------- YouTube ----------
   function parseYT(s){
     s = (s || '').trim();
-    if(/^[\w-]{11}$/.test(s)) return s;
+    // ID trần 11 ký tự phải có chữ HOA / số / "_" như ID thật. Chuỗi toàn chữ thường + gạch ngang (vd "lofi-hiphop") là TỪ KHOÁ.
+    if(/^[\w-]{11}$/.test(s)) return /[A-Z0-9_]/.test(s) ? s : null;
     const m = s.match(/(?:v=|youtu\.be\/|embed\/|shorts\/|live\/)([\w-]{11})/);
     return m ? m[1] : null;
   }
@@ -82,41 +108,61 @@ const Park = (() => {
       box.appendChild(b);
     });
   }
+  const TV_OFF = 'Chức năng tìm kiếm đang tạm nghỉ, bạn vui lòng dán link video nhé.';
   async function searchVideos(q){
-    const box = $('tvResults'), key = (GCITY_CONFIG.YOUTUBE_API_KEY || '').trim();
-    if(!key){ note(box, 'Chưa có YouTube API key (js/config.js → YOUTUBE_API_KEY). Tạm thời hãy dán link video.'); return; }
+    const box = $('tvResults');
+    if(!YTKEYS.count()){ note(box, TV_OFF); return; }
     const ck = q.toLowerCase();
     if(ytCache.has(ck)){ renderResults(box, ytCache.get(ck)); return; }
     const my = ++searchSeq;
     note(box, '⏳ Đang tìm…');
     try {
+      const r = await ytSearch(q);
+      if(my !== searchSeq) return;                 // đã có lượt tìm mới hơn
+      if(r.ok){
+        ytCache.set(ck, r.items);
+        renderResults(box, r.items);
+        return;
+      }
+      // Người chơi không cần biết chuyện key / quota: chi tiết kỹ thuật chỉ ghi ra console
+      console.warn('[TV] tìm video thất bại:', r.reason, r.msg || '', r.reason === 'quota' ? `(reset sau ~${YTKEYS.resetInMin()} phút)` : '');
+      if(r.reason === 'quota' || r.reason === 'key') note(box, TV_OFF);
+      else note(box, 'Hiện chưa tìm được video. Vui lòng thử lại sau.');
+    } catch(e){
+      if(my === searchSeq){ console.warn('[TV]', e); note(box, 'Mạng đang chập chờn, bạn thử lại sau nhé.'); }
+    }
+  }
+  // Gọi YouTube Data API và XOAY VÒNG key: key nào báo hết quota thì bỏ qua, thử key kế tiếp
+  async function ytSearch(q){
+    const isQuota = why => /quotaExceeded|dailyLimitExceeded|rateLimitExceeded|userRateLimitExceeded/i.test(why || '');
+    // Chỉ coi là "key hỏng" khi Google nói thẳng key có vấn đề. badRequest / forbidden... thường chỉ do từ khoá lạ
+    // → KHÔNG được khoá key cả ngày (bản cũ: một từ khoá lạ là mất key trên trình duyệt đó).
+    const isKeyBad = why => /keyInvalid|ipRefererBlocked|apiNotEnabled|accessNotConfigured/i.test(why || '');
+    let keyBad = false;
+    for(let hop=0; hop<YTKEYS.count()+1; hop++){
+      const key = YTKEYS.pick();
+      if(!key) return { ok:false, reason: keyBad ? 'key' : 'quota' };   // hết key còn sống
       const u = new URL('https://www.googleapis.com/youtube/v3/search');
       Object.entries({ part:'snippet', type:'video', maxResults:8, q, key,
         videoEmbeddable:'true', videoSyndicated:'true', safeSearch:'moderate', relevanceLanguage:'vi' })
-        .forEach(([k,v])=> u.searchParams.set(k, v));
-      const r = await fetch(u), j = await r.json();
-      if(my !== searchSeq) return;   // đã có lượt tìm mới hơn
-      if(j.error){
-        const why = (j.error.errors && j.error.errors[0] && j.error.errors[0].reason) || '';
-        note(box, why === 'quotaExceeded' ? 'Hôm nay hết lượt tìm miễn phí rồi, hãy dán link video nhé.'
-               : /keyInvalid|ipRefererBlocked|forbidden/i.test(why) ? 'API key không hợp lệ hoặc bị chặn theo tên miền.'
-               : 'Không tìm được: ' + (j.error.message || 'lỗi không rõ'));
-        return;
+        .forEach(([k,v]) => u.searchParams.set(k, v));
+      const j = await (await fetch(u)).json();
+      if(!j.error){
+        return { ok:true, items:(j.items || []).filter(x => x.id && x.id.videoId)
+          .map(x => ({ id:x.id.videoId, title:decodeHTML(x.snippet.title), channel:decodeHTML(x.snippet.channelTitle) })) };
       }
-      const items = (j.items || []).filter(x=> x.id && x.id.videoId).map(x=>({
-        id: x.id.videoId, title: decodeHTML(x.snippet.title), channel: decodeHTML(x.snippet.channelTitle) }));
-      ytCache.set(ck, items);
-      renderResults(box, items);
-    } catch(e){
-      if(my === searchSeq) note(box, 'Lỗi mạng, thử lại sau nhé.');
+      const why = (j.error.errors && j.error.errors[0] && j.error.errors[0].reason) || '';
+      if(isQuota(why)){ YTKEYS.kill(key, why); continue; }              // hết lượt → xoay sang key sau
+      if(isKeyBad(why)){ YTKEYS.kill(key, why); keyBad = true; continue; }
+      return { ok:false, reason:'err', msg:j.error.message };            // lỗi theo yêu cầu (từ khoá lạ...): không đụng tới key
     }
+    return { ok:false, reason: keyBad ? 'key' : 'quota' };
   }
   // Nhập link/ID -> phát luôn; nhập chữ -> tìm kiếm
   function submitTv(){
     const v = $('tvUrl').value.trim();
     if(!v){ UI.toast('Gõ tên video hoặc dán link YouTube'); return; }
-    // 11 ký tự toàn chữ cái (vd "instrumental") là từ khóa chứ không phải ID video -> tìm kiếm
-    if(parseYT(v) && !/^[a-z]{11}$/i.test(v)){ $('tvResults').innerHTML = ''; playVideo(v); return; }
+    if(parseYT(v)){ $('tvResults').innerHTML = ''; playVideo(v); return; }
     try { localStorage.setItem('gcity_yt', v); } catch(e){}
     searchVideos(v);
   }
@@ -189,11 +235,11 @@ const Park = (() => {
         grid.appendChild(c);
       });
     }},
-    lo: { name:'🎟 Đánh lô', fee:0, custom:true, start(b){ loStart(b); } },
+    lo: { name:'🎟 Quay số may mắn', fee:0, custom:true, start(b){ loStart(b); } },
   };
 
-  // ---------- Đánh lô ----------
-  // Chọn số 01–99 + đặt xu -> bấm "Kết quả": 10 giải quay lần lượt, mỗi giải là một lần quay ĐỘC LẬP (có thể trùng số giữa các giải).
+  // ---------- Quay số may mắn ----------
+  // Chọn số 01–99 + số xu chơi -> bấm "Quay số": 10 giải quay lần lượt, mỗi giải là một lần quay ĐỘC LẬP (có thể trùng số giữa các giải).
   // Mỗi giải trùng số đã chọn => thưởng x10 tiền đặt; trúng nhiều giải thì cộng dồn (2 giải = x20, 3 giải = x30, ...).
   const LO = { PRIZES:10, MULT:10, MAX:10000000000, pick:1, bet:10000, busy:false, res:[], shown:0, body:null, summary:'' };
   const nf  = n => String(Math.floor(n)).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
@@ -203,7 +249,7 @@ const Park = (() => {
   function loBalance(){ const el = loQ('#loBal'); if(el) el.textContent = nf(player.coins) + ' xu'; }
   function loLock(on){
     ['#loPick', '#loBet', '#loGo'].forEach(s => { const el = loQ(s); if(el) el.disabled = on; });
-    const go = loQ('#loGo'); if(go) go.textContent = on ? 'Đang quay…' : 'Kết quả';
+    const go = loQ('#loGo'); if(go) go.textContent = on ? 'Đang quay…' : 'Quay số';
   }
   function loStart(body){
     if(!LO.busy) LO.bet = Math.max(1, Math.min(LO.bet, Math.floor(player.coins) || 1));
@@ -212,11 +258,11 @@ const Park = (() => {
       <div class="lo-bal"><span>Số dư</span><b id="loBal">${nf(player.coins)} xu</b></div>
       <div class="lo-rule">Số 01–99 · ${LO.PRIZES} giải · Thưởng ×${LO.MULT}/giải trúng</div>
       <div class="lo-row">
-        <label>Số chọn<input id="loPick" class="mg-input" inputmode="numeric" maxlength="2" value="${LO.pick}"></label>
-        <label>Đặt xu<input id="loBet" class="mg-input" inputmode="numeric" value="${LO.bet}"></label>
+        <label>Số chọn<input id="loPick" class="mg-input" inputmode="numeric" maxlength="2" value="${two(LO.pick)}"></label>
+        <label>Xu tham gia<input id="loBet" class="mg-input" inputmode="numeric" value="${LO.bet}"></label>
       </div>
       <div class="lo-rule">Tối đa ${nf(LO.MAX)} xu/lượt.</div>
-      <button class="btn-primary btn-wide" id="loGo">Kết quả</button>
+      <button class="btn-primary btn-wide" id="loGo">Quay số</button>
       <div class="lo-rule" id="loSum">${LO.summary}</div>
       <div class="lo-title">Kết quả quay số</div>
       <div class="lo-grid">${Array.from({length:LO.PRIZES}, (_, i) => `<div class="lo-box" id="loB${i}"><small>Giải ${i+1}</small><b>··</b></div>`).join('')}</div>`;
@@ -230,9 +276,9 @@ const Park = (() => {
       if(LO.busy) return;
       const pick = parseInt(loQ('#loPick').value, 10), bet = parseInt(loQ('#loBet').value, 10);
       if(!(pick >= 1 && pick <= 99)){ UI.toast('Chọn số từ 01 đến 99'); return; }
-      if(!(bet >= 1)){ UI.toast('Nhập số xu muốn đặt'); return; }
+      if(!(bet >= 1)){ UI.toast('Nhập số xu muốn chơi'); return; }
       if(bet > LO.MAX){ UI.toast(`Tối đa ${nf(LO.MAX)} xu/lượt`); return; }
-      if(bet > player.coins){ UI.toast('Không đủ xu!'); return; }
+      if(bet > player.coins){ UI.toast(UI.NO_COIN); return; }
       LO.pick = pick; LO.bet = bet; loSpin();
     };
   }
@@ -241,6 +287,7 @@ const Park = (() => {
     LO.busy = true; LO.shown = 0; LO.summary = '';
     LO.res = Array.from({length:LO.PRIZES}, () => 1 + Math.floor(Math.random() * 99));   // mỗi giải một lần random riêng
     player.coins -= bet; UI.updateHUD(player); loBalance(); loLock(true);
+    pend.lo = { bet, pick, res: LO.res.slice() }; save();   // đóng tab giữa chừng → lần sau vào game vẫn được trả đúng kết quả này
     for(let i = 0; i < LO.PRIZES; i++){ const el = loQ('#loB' + i); if(el){ el.className = 'lo-box'; el.lastChild.textContent = '··'; } }
     const sum = t => { LO.summary = t; const el = loQ('#loSum'); if(el) el.textContent = t; };
     sum('Đang quay…');
@@ -258,10 +305,10 @@ const Park = (() => {
       await wait(120);
     }
     const win = bet * LO.MULT * hits;
-    player.coins += win; UI.updateHUD(player); loBalance();
+    player.coins += win; pend.lo = null; UI.updateHUD(player); loBalance(); save();
     LO.busy = false; loLock(false);
-    if(hits){ sum(`🎉 Trúng ${hits} giải (×${hits * LO.MULT}) → +${nf(win)} xu`); UI.toast(`🎉 Đánh lô trúng ${hits} giải! +${nf(win)} xu`); }
-    else { sum(`Trượt rồi, mất ${nf(bet)} xu`); UI.toast('Đánh lô trượt, chúc may mắn lần sau!'); }
+    if(hits){ sum(`🎉 Trúng ${hits} giải (×${hits * LO.MULT}) → +${nf(win)} xu`); UI.toast(`🎉 Quay số trúng ${hits} giải! +${nf(win)} xu`); }
+    else { sum(`Trượt rồi, mất ${nf(bet)} xu`); UI.toast('Quay số trượt, chúc may mắn lần sau!'); }
   }
 
   function showGamePanel(title){
@@ -272,12 +319,14 @@ const Park = (() => {
   function openGame(id){
     const g = MG[id]; if(!g) return;
     if(g.custom){ g.start(showGamePanel(g.name)); return; }
-    if(player.coins < g.fee){ UI.toast(`Cần ${g.fee}🪙 để chơi`); return; }
+    if(player.coins < g.fee){ UI.toast(UI.NO_COIN); return; }
     player.coins -= g.fee; UI.updateHUD(player);
     const body = showGamePanel(g.name);
+    pend.mem = g.fee; save();                      // ván đang dở: đóng tab giữa chừng thì lần sau được hoàn xu
     g.start(body, (reward, msg)=>{
-      player.coins += reward; UI.updateHUD(player);
-      body.innerHTML = `<div class="mg-result">${msg}<br>${reward ? '+' + reward + '🪙' : 'Chúc may mắn lần sau'}</div><button class="btn-primary btn-wide" id="mgAgain">Chơi lại (${g.fee}🪙)</button>`;
+      pend.mem = 0;
+      player.coins += reward; UI.updateHUD(player); save();
+      body.innerHTML = `<div class="mg-result">${msg}<br>${reward ? '+' + reward + ' xu' : 'Chúc may mắn lần sau'}</div><button class="btn-primary btn-wide" id="mgAgain">Chơi lại (${g.fee} xu)</button>`;
       $('mgAgain').onclick = ()=> openGame(id);
     });
   }
@@ -288,7 +337,10 @@ const Park = (() => {
     $('tvPlay').onclick = submitTv;
     $('tvUrl').addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); submitTv(); } });
     $('tvStop').onclick = stopVideo;
+    // đóng panel giữa ván lật hình = bỏ ván (mất phí), không tính là ván dở để hoàn xu
+    new MutationObserver(()=>{ if($('gamePanel').classList.contains('hidden') && pend.mem){ pend.mem = 0; save(); } })
+      .observe($('gamePanel'), { attributes:true, attributeFilter:['class'] });
   }
 
-  return { init, update, openRace, openGame, matrix3d, parseYT };
+  return { init, update, openRace, openGame, matrix3d, parseYT, getPending, settlePending };
 })();
