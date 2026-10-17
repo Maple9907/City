@@ -599,10 +599,11 @@ const GChar = (() => {
     try{
       if(!pR){
         pR = new THREE.WebGLRenderer({ antialias:true, alpha:true, preserveDrawingBuffer:true });
+        GFX.setupRenderer(pR, { tone:false });
         pR.setPixelRatio(1); pR.setClearColor(0x000000, 0);
         pScene = new THREE.Scene();
-        pScene.add(new THREE.AmbientLight(0xffffff, 0.95));
-        const d = new THREE.DirectionalLight(0xfff2dd, 0.65); d.position.set(3, 6, 8); pScene.add(d);
+        pScene.add(new THREE.AmbientLight(0xffffff, 0.95*GFX.LI));
+        const d = new THREE.DirectionalLight(0xfff2dd, 0.65*GFX.LI); d.position.set(3, 6, 8); pScene.add(d);
         pCam = new THREE.PerspectiveCamera(28, 1, 0.1, 60);
       }
       pR.setSize(w, h); pCam.aspect = w/h; pCam.updateProjectionMatrix();

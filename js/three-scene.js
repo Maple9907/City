@@ -3,7 +3,7 @@
  * API: Scene3D.init(), buildZone(), createCharacter(), updatePlayer(), camera, collision.
  */
 const Scene3D = (() => {
-  let scene, camera, renderer, clock;
+  let scene, camera, renderer;
   let container;
   let worldGroup;      // group chứa zone hiện tại
   let characters = {}; // id -> {group, parts, action, actionT}
@@ -82,23 +82,26 @@ const Scene3D = (() => {
 
     camera = new THREE.PerspectiveCamera(CAM.fov, window.innerWidth/window.innerHeight, 0.1, 400);
     renderer = new THREE.WebGLRenderer({ antialias:true });
+    GFX.setupRenderer(renderer);   // sRGB + tone mapping (three r186) — thêm ?legacy=1 vào URL để xem lại kiểu màu cũ
     const qRes = parseFloat(new URLSearchParams(location.search).get('res'));
     if(qRes > 0){ RES.max = camClamp(qRes, 0.5, 3); RES.fixed = true; }
     RES.cur = RES.max; renderer.setPixelRatio(RES.cur);
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.type = THREE.PCFShadowMap;   // từ r182 PCFShadowMap đã là bóng mềm (PCFSoftShadowMap bị bỏ)
     container.appendChild(renderer.domElement);
 
     // lights
     // Ánh sáng cân bằng: tổng ~1.0 ở mặt nằm ngang (trước đây 0.85 + 0.48 = 1.33 → gạch/nền bị cháy sáng thành trắng)
-    hemi = new THREE.HemisphereLight(0xeaf6ff, 0xcfb894, 0.30); scene.add(hemi);
-    ambient = new THREE.AmbientLight(0xffffff, 0.32); scene.add(ambient);
-    sun = new THREE.DirectionalLight(0xfff1d6, 0.52);
+    // r155+: đèn dùng đơn vị vật lý → nhân GFX.LI (=π) để giữ đúng độ sáng như thiết kế gốc
+    hemi = new THREE.HemisphereLight(0xeaf6ff, 0xcfb894, 0.30*GFX.LI); scene.add(hemi);
+    ambient = new THREE.AmbientLight(0xffffff, 0.32*GFX.LI); scene.add(ambient);
+    sun = new THREE.DirectionalLight(0xfff1d6, 0.52*GFX.LI);
     sun.position.set(20, 30, 10); sun.castShadow = true;
     sun.shadow.mapSize.set(2048,2048);
     sun.shadow.camera.left=-60; sun.shadow.camera.right=60;
     sun.shadow.camera.top=60; sun.shadow.camera.bottom=-60; sun.shadow.camera.far=200;
+    sun.shadow.normalBias = 0.03;   // chống "răng cưa bóng" (shadow acne) với bóng PCF mới
     scene.add(sun);
     buildSky();          // sao + trăng cho ban đêm
     followClock();       // trời bắt đầu đúng theo giờ thiết bị
@@ -141,7 +144,6 @@ const Scene3D = (() => {
       camera.aspect = window.innerWidth/window.innerHeight; camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
     });
-    clock = new THREE.Clock();
   }
 
   // ===== WORLD BUILDING =====
@@ -315,13 +317,13 @@ const Scene3D = (() => {
     // ánh sáng
     mixTo(hemi.color, 0xeaf6ff, 0x7a8fd8, k);
     mixTo(hemi.groundColor, 0xcfb894, 0x25345f, k);
-    hemi.intensity = 0.30 - 0.03*k;
+    hemi.intensity = (0.30 - 0.03*k) * GFX.LI;
     mixTo(ambient.color, 0xffffff, 0x7d90d6, k);
-    ambient.intensity = 0.32 - 0.11*k;
+    ambient.intensity = (0.32 - 0.11*k) * GFX.LI;
     // mặt trời: ban ngày trắng ấm → hồng cam lúc thấp (bình minh / hoàng hôn) → xanh lam khi đêm
     mixTo(sun.color, 0xfff1d6, 0xffb069, DN.warm*(1-k));
     sun.color.lerp(_tmp.setHex(0xa4b8f5), k);
-    sun.intensity = 0.52 - 0.30*k;
+    sun.intensity = (0.52 - 0.30*k) * GFX.LI;
     sun.position.copy(sunDir).lerp(moonDir, k);
     // sao + trăng
     if(stars){ stars.material.opacity = k*0.95; stars.visible = k>0.02; }
@@ -602,7 +604,7 @@ const Scene3D = (() => {
   // ps: tiến độ 0..1 của từng con; run: đang đua; win: chỉ số con thắng (nhảy ăn mừng) hoặc -1
   function setRacers(ps,run,win){ const t=performance.now()/1000;
     racers.forEach((g,i)=>{ const q=stadiumPt(laneR(i), RACE_GATE+(1-RACE_GATE)*(ps[i]||0));
-      g.position.set(q.x,0.15,q.z); g.rotation.y=Math.atan2(-q.vz,q.vx); if(window.Animals) Animals.animate(g,t,!!run,win===i); }); }
+      g.position.set(q.x,0.15,q.z); g.rotation.y=Math.atan2(-q.vz,q.vx); if(window.Animals) Animals.animate(g,t,Array.isArray(run)?!!run[i]:!!run,win===i); }); }
   function setRaceBoard(sub,tl,tt,sl,st){
     if(!raceCanvas) return; const g=raceCanvas.getContext('2d');
     g.fillStyle='#173a36'; g.fillRect(0,0,1024,384); g.textAlign='center'; g.fillStyle='#fff'; g.font='bold 64px sans-serif'; g.fillText('TRƯỜNG ĐUA THÚ',512,80);

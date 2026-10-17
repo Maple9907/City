@@ -23,9 +23,12 @@ const Park = (() => {
     if(msg.length){ UI.updateHUD(player); UI.toast(msg.join(' · ')); }
   }
 
-  // ---------- Trường đua thú: 7 bạn thú · thưởng ×6 · mở vé 30s -> đua ~10s -> kết quả 7s ----------
+  // ---------- Trường đua thú: 7 bạn thú · thưởng ×6 · mở vé 30s -> đua ~10-13s (chờ cả 7 con về đích) -> kết quả 7s ----------
   const AN=['🐎 Ngựa Đỏ','🐕 Chó Xanh','🐇 Thỏ Vàng','🐢 Rùa Tím','🦊 Cáo Cam','🐖 Heo Hồng','🐸 Ếch Xanh Lá'], N=AN.length, MULT=6;
-  const RC={id:206453,ph:'open',t:30,rt:0,tk:null,p:AN.map(()=>0),v:[],o:[],w:-1,fee:10,acc:0};   // t: đếm lùi pha open/end · rt: thời gian chạy · o: pha dao động ngẫu nhiên của từng thú
+  const RC={id:206453,ph:'open',t:30,rt:0,tk:null,p:AN.map(()=>0),v:[],o:[],w:-1,fee:10,acc:0,fin:[],vf:[]};   // t: đếm lùi pha open/end · rt: thời gian chạy · o: pha dao động ngẫu nhiên của từng thú · fin: thời điểm từng thú chạm vạch đích (null = chưa về) · vf: tốc độ lúc chạm đích
+  const RUNOUT=0.8;   // giây: thú về đích vẫn chạy đà rồi giảm tốc đều tới khi đứng lại, không đứng khựng ngay trên vạch
+  // trả về tiến độ của một con sau khi đã chạm đích: 1 + quãng chạy đà (giảm tốc đều từ vf về 0 trong RUNOUT giây)
+  const runOut = i => { const s=Math.min(Math.max(RC.rt-RC.fin[i],0),RUNOUT); return 1 + RC.vf[i]*s*(1-s/(2*RUNOUT)); };
   const dot = i => `<span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:${Animals.LANE_CSS[i]};margin-right:6px;border:1px solid #fff6"></span>`;
   let raceT = 0;
   function raceStep(dt){
@@ -35,15 +38,26 @@ const Park = (() => {
     // theo từng thú (Ngựa/Rùa/Ếch ~18% > 16,7% hoà vốn của thưởng x6 -> vẫn có con +EV).
     if(RC.ph==='open'){
       RC.t -= dt;
-      if(RC.t<=0){ RC.ph='run'; RC.rt=0; RC.p=AN.map(()=>0); RC.v=AN.map(()=>.085+Math.random()*.05); RC.o=AN.map(()=>Math.random()*Math.PI*2); }
+      if(RC.t<=0){ RC.ph='run'; RC.rt=0; RC.p=AN.map(()=>0); RC.v=AN.map(()=>.085+Math.random()*.05); RC.o=AN.map(()=>Math.random()*Math.PI*2); RC.fin=AN.map(()=>null); RC.vf=AN.map(()=>0); RC.w=-1; }
     }
     else if(RC.ph==='run'){
-      RC.rt += dt;
-      AN.forEach((_,i)=>{ RC.p[i] += (RC.v[i] + Math.sin(RC.rt*2+RC.o[i])*.02)*dt; });
-      const m = Math.max(...RC.p);
-      if(m>=1){ RC.w=RC.p.indexOf(m); RC.ph='end'; RC.t=7;
-        if(RC.tk===RC.w){ const win=Math.round(RC.fee*MULT); player.coins+=win; UI.updateHUD(player); UI.toast(`🎉 Trúng vé đua! +${win} xu`); }
-        else if(RC.tk!==null) UI.toast('Vé đua không trúng, chúc may mắn!'); }
+      // Mỗi thú phải tự chạm vạch đích (p>=1). Ván chỉ kết thúc khi cả 7 con đã về đích và chạy đà xong;
+      // con về nhất được xác định ngay lúc chạm vạch (nội suy thời điểm chạm trong khung hình để không hoà giả).
+      const t0 = RC.rt; RC.rt += dt;
+      AN.forEach((_,i)=>{
+        if(RC.fin[i]===null){
+          const p0=RC.p[i], sp=RC.v[i] + Math.sin(RC.rt*2+RC.o[i])*.02;
+          RC.p[i] = p0 + sp*dt;
+          if(RC.p[i]>=1){ RC.fin[i] = t0 + dt*(1-p0)/(RC.p[i]-p0); RC.vf[i] = sp; RC.p[i] = runOut(i); }
+        } else RC.p[i] = runOut(i);
+      });
+      if(RC.w<0){
+        const first = RC.fin.reduce((b,f,i)=> f!==null && (b<0 || f<RC.fin[b]) ? i : b, -1);
+        if(first>=0){ RC.w=first;
+          if(RC.tk===RC.w){ const win=Math.round(RC.fee*MULT); player.coins+=win; UI.updateHUD(player); UI.toast(`🎉 Trúng vé đua! +${win} xu`); }
+          else if(RC.tk!==null) UI.toast('Vé đua không trúng, chúc may mắn!'); }
+      }
+      if(RC.fin.every(f=>f!==null && RC.rt-f>=RUNOUT)){ RC.ph='end'; RC.t=7; }
     }
     else if(RC.ph==='end'){
       RC.t -= dt;
@@ -51,9 +65,12 @@ const Park = (() => {
     }
     RC.acc += dt;
     if(RC.acc>=.5){ RC.acc=0;
-      const st = RC.ph==='open' ? `Đang mở vé ${Math.ceil(RC.t)} giây` : RC.ph==='run' ? 'Đang đua!' : `Thắng: ${AN[RC.w]}`;
+      const done = RC.ph==='run' ? RC.fin.filter(f=>f!==null).length : 0;
+      const st = RC.ph==='open' ? `Đang mở vé ${Math.ceil(RC.t)} giây` : RC.ph==='run' ? (RC.w<0 ? 'Đang đua!' : `${AN[RC.w]} nhất · ${done}/${N} về đích`) : `Thắng: ${AN[RC.w]}`;
       Scene3D.setRaceBoard(`Đua thú · 7 thú · thưởng ×${MULT}`,'VÉ CỦA BẠN', RC.tk===null ? 'Chưa mua vé ván này' : AN[RC.tk],'TRẠNG THÁI',st); }
-    Scene3D.setRacers(RC.p, RC.ph==='run', RC.ph==='end' ? RC.w : -1);
+    // đang chạy = chưa về đích hoặc còn chạy đà; con thắng chỉ ăn mừng sau khi đã dừng lại
+    const moving = RC.ph==='run' ? RC.fin.map(f=> f===null || RC.rt-f<RUNOUT) : false;
+    Scene3D.setRacers(RC.p, moving, RC.ph==='end' ? RC.w : (RC.ph==='run' && RC.w>=0 && !moving[RC.w] ? RC.w : -1));
   }
   function openRace(){
     const b = showGamePanel('🎟 Trường đua thú');
