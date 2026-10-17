@@ -59,8 +59,17 @@ const Vehicles = (() => {
   // ---------- Máy bay cánh quạt 2 chỗ (ghế nâu, cánh quạt ở mũi) ----------
   function plane(color){
     const g = new THREE.Group(), dark = 0x222222;
-    const fu = new THREE.CylinderGeometry(0.4, 0.25, 3.0, 12); fu.rotateX(Math.PI/2);       // thân: to ở mũi, thon ở đuôi
-    const f = new THREE.Mesh(fu, M(color)); f.position.set(0, 0.72, 0); f.castShadow = true; g.add(f);
+    // thân: to ở mũi, thon ở đuôi — tách 3 đoạn để khoét BUỒNG LÁI HỞ (bản cũ là 1 ống đặc nên cổ chân/mũi chân phi công chìm trong thân)
+    // bán kính theo z: r(z) = 0.325 + 0.05z (đuôi 0.25 → mũi 0.4, giữ nguyên dáng cũ)
+    const seg = (z0, z1) => {
+      const r = z => 0.325 + 0.05*z, geo = new THREE.CylinderGeometry(r(z1), r(z0), z1 - z0, 12); geo.rotateX(Math.PI/2);
+      const m = new THREE.Mesh(geo, M(color)); m.position.set(0, 0.72, (z0 + z1)/2); m.castShadow = true; g.add(m);
+    };
+    seg(-1.5, 0.0); seg(1.2, 1.5);                                                             // đuôi · hốc động cơ
+    box(g, 0.64, 0.06, 1.2, 0, 0.40, 0.6, color);                                              // sàn buồng lái (chân đặt xuống đây)
+    box(g, 0.06, 0.46, 1.2, -0.35, 0.67, 0.6, color); box(g, 0.06, 0.46, 1.2, 0.35, 0.67, 0.6, color);   // thành buồng lái
+    box(g, 0.76, 0.5, 0.1, 0, 0.7, 1.22, color);                                               // vách trước
+    box(g, 0.34, 0.66, 0.34, 0, 0.76, 0.4, DARK);                                              // chân ghế lái
     const cone = new THREE.ConeGeometry(0.4, 0.4, 12); cone.rotateX(Math.PI/2);
     const nose = new THREE.Mesh(cone, M(0xe9e9e9)); nose.position.set(0, 0.72, 1.7); g.add(nose);
     box(g, 4.6, 0.08, 1.0, 0, 0.62, 0.15, color);                                              // cánh
@@ -68,12 +77,13 @@ const Vehicles = (() => {
     box(g, 0.3, 0.12, 1.0,  2.3, 0.62, 0.15, 0x2ecc71);
     box(g, 1.7, 0.06, 0.5, 0, 0.8, -1.35, color);                                              // đuôi ngang
     box(g, 0.07, 0.7, 0.55, 0, 1.15, -1.38, color);                                            // đuôi đứng
-    box(g, 0.56, 0.12, 0.5, 0, 1.12, 0.5, SEAT);  box(g, 0.56, 0.5, 0.1, 0, 1.42, 0.22, SEAT);   // ghế lái
+    box(g, 0.56, 0.12, 0.5, 0, 1.12, 0.4, SEAT);  box(g, 0.56, 0.5, 0.1, 0, 1.42, 0.12, SEAT);   // ghế lái
     box(g, 0.56, 0.12, 0.5, 0, 1.12, -0.4, SEAT); box(g, 0.56, 0.5, 0.1, 0, 1.42, -0.68, SEAT);  // ghế sau
     const ws = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.34, 0.05), GLASS());              // kính chắn gió
-    ws.position.set(0, 1.32, 0.88); ws.rotation.x = -0.5; g.add(ws);
+    ws.position.set(0, 1.14, 1.25); ws.rotation.x = -0.5; g.add(ws);                          // dời ra trước: bản cũ nằm ngay đầu gối phi công
+    box(g, 0.06, 1.33, 0.06, 0, 1.135, 1.0, dark); box(g, 0.95, 0.07, 0.07, 0, 1.8, 1.0, dark);   // cần lái: hai tay phi công đặt lên thanh ngang
     const wg = wheelGeo(0.22, 0.12), wm = M(dark);                                             // bộ bánh hạ cánh
-    [[-0.55, 0.3], [0.55, 0.3], [0, 1.0]].forEach(([x, z]) => {
+    [[-0.55, 0.3], [0.55, 0.3], [0, 1.35]].forEach(([x, z]) => {
       const w = new THREE.Mesh(wg, wm); w.position.set(x, 0.24, z); g.add(w);
       box(g, 0.06, 0.4, 0.06, x, 0.46, z, dark);
     });
@@ -83,7 +93,7 @@ const Vehicles = (() => {
     const sp = new THREE.ConeGeometry(0.1, 0.22, 10); sp.rotateX(Math.PI/2);
     const spin = new THREE.Mesh(sp, M(0xcccccc)); spin.position.z = 0.1; prop.add(spin);
     g.add(prop);
-    g.userData = { seat:{ x:0, y:1.18, z:0.5 }, wheels:[], prop, maxSpeed:13 };
+    g.userData = { seat:{ x:0, y:1.18, z:0.4 }, wheels:[], prop, maxSpeed:13 };
     return g;
   }
 
