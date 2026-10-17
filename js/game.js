@@ -155,7 +155,16 @@
 
     UI.initPanels({
       onChatSend: text=> Net.sendChat(text),
-      onEmote: id=>{ if(fishing) cancelFishing(); Player.doAction(player, id); playerMesh.userData.action = player.action; playerMesh.userData.actionT = 0; },
+      onEmote: id=>{
+        if(fishing) cancelFishing();
+        const ud = playerMesh.userData;
+        if(id==='lotus' && ud.action==='sit'){   // đang ngồi ghế: bước ra trước ghế rồi mới ngồi xuống đất, không xuyên vào ghế
+          const nx = playerMesh.position.x + Math.sin(ud.face||0)*1.3, nz = playerMesh.position.z + Math.cos(ud.face||0)*1.3;
+          if(!Scene3D.collides(currentZone, nx, nz)){ playerMesh.position.x = nx; playerMesh.position.z = nz; player.x = nx; player.y = nz; }
+        }
+        Player.doAction(player, id); ud.action = player.action; ud.actionT = 0;
+        try{ Net.sendMyState({ x:player.x, y:player.y, action:player.action }); }catch(e){}
+      },
       onAction: handleAction,
       getPlayer: ()=> player,
       refreshPlayers: ()=> UI.renderPlayers(Net.getPlayers()),
@@ -358,10 +367,10 @@
   }
   function standUp(){
     const ud = playerMesh.userData;
-    if(ud.action!=='sit') return;
+    if(!Player.isSeated(ud.action)) return;
     ud.action = null; player.action = null; Net.sendMyState({ x:player.x, y:player.y, action:null });
   }
-  function toggleSit(b){ if(playerMesh.userData.action==='sit') standUp(); else sitOn(b); }
+  function toggleSit(b){ if(Player.isSeated(playerMesh.userData.action)) standUp(); else sitOn(b); }
 
   // Chạm vào ghế: đi tới + ngồi (đứng sát thì ngồi luôn). Chạm ra chỗ khác: đứng dậy / huỷ đi. Di chuyển joystick/WASD: tự đứng dậy (xử lý trong loop).
   let walkTo = null;   // { b: ghế đích, t: thời gian đã đi, stuck: thời gian bị kẹt }
@@ -369,7 +378,7 @@
     if(!playerMesh || riding) return;
     const npc = npcAt(cx, cy); if(npc){ UI.guardTap(); NPC_ACT[npc.act](); return; }
     if(Scene3D.pickFerris(cx, cy)){ toggleFerris(); return; }     // chạm vào vòng đu quay
-    const sitting = playerMesh.userData.action==='sit';
+    const sitting = Player.isSeated(playerMesh.userData.action);
     const b = Scene3D.pickBench(cx, cy);
     if(!b){ walkTo = null; if(sitting) standUp(); return; }
     const d = Math.hypot(playerMesh.position.x - b.x, playerMesh.position.z - b.z);
@@ -561,10 +570,10 @@
 
       moving = (mx!==0 || mz!==0);
       playerMesh.userData.moving = moving;
-      if(moving && playerMesh.userData.action==='sit'){ playerMesh.userData.action = null; player.action = null; } // đi là tự đứng dậy
+      if(moving && Player.isSeated(playerMesh.userData.action)){ playerMesh.userData.action = null; player.action = null; } // đi là tự đứng dậy
       if(moving && fishing) cancelFishing();   // đi là thôi câu (mồi đã quăng coi như mất)
 
-      if(moving && playerMesh.userData.action!=='sit'){
+      if(moving && !Player.isSeated(playerMesh.userData.action)){
         const dir = Scene3D.getMoveDir();
         const len = Math.hypot(mx,mz); mx/=len; mz/=len;
         const sp = (input.run||speedBoost>0? 7 : 4) * dt;
@@ -606,7 +615,7 @@
       if(speedBoost>0) speedBoost-=dt;
 
       // action timer (auto-clear non-sit)
-      if(playerMesh.userData.action && playerMesh.userData.action!=='sit' && FISH_ACTS.indexOf(playerMesh.userData.action)<0){
+      if(playerMesh.userData.action && !Player.isSeated(playerMesh.userData.action) && FISH_ACTS.indexOf(playerMesh.userData.action)<0){
         const dur = playerMesh.userData.action==='jump'?0.8 : (playerMesh.userData.action==='wave'?2.5 : (playerMesh.userData.action==='cry'?3 : (playerMesh.userData.action==='holla'?2 : 4)));
         if(playerMesh.userData.actionT > dur){ playerMesh.userData.action=null; player.action=null; }
       }
@@ -614,7 +623,7 @@
       // ===== tư thế câu cá (v20): chỉ khi đã bấm quăng; theo trạng thái của Fishing: quăng · chờ · cá cắn · kéo =====
       if(fishing){
         const ud2 = playerMesh.userData;
-        if(currentZone!=='fishing' || riding || ferrisRide >= 0 || ud2.action==='sit') endFishPose();
+        if(currentZone!=='fishing' || riding || ferrisRide >= 0 || Player.isSeated(ud2.action)) endFishPose();
         else {
           const fs2 = Fishing.getState().state;
           const pose = fs2==='casting' ? 'cast' : fs2==='biting' ? 'bite' : fs2==='caught' ? 'reel' : 'fish';

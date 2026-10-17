@@ -7,7 +7,7 @@
  *  - Tay có khuỷu + bàn tay, chân có đầu gối + giày (giày đi theo chân khi bước)
  *  - Mỗi bộ phận được "bake" thành 1 mesh vertex-color => chỉ ~14 draw call / nhân vật
  *  - Viền toon (inverted hull) cho nhân vật nổi bật trên nền pastel
- *  - Animation: thở, chớp mắt, đung đưa tóc/đuôi, đi/chạy mượt, ngồi đúng chiều, 7 điệu nhảy
+ *  - Animation: thở, chớp mắt, đung đưa tóc/đuôi, đi/chạy mượt, ngồi ghế đúng chiều, ngồi xếp bằng, 7 điệu nhảy
  *
  * API (giữ nguyên tên bộ phận cũ để game.js không phải đổi):
  *   GChar.DEFS                      { male:[...], female:[...] }
@@ -527,6 +527,18 @@ const GChar = (() => {
         p.foreL.rotation.set(-0.98, 0, 0);     p.foreR.rotation.set(-0.98, 0, 0);
         p.body.rotation.set(0.10 + br, 0, 0);
         p.head.rotation.set(-0.05, Math.sin(tt*0.7)*0.07, 0);
+        if(p.tail) p.tail.rotation.set(0.35, 0, Math.sin(tt*1.2)*0.05);
+      } else if(a === 'lotus'){
+        // ngồi xếp bằng dưới đất: hông sát mặt đất, hai đầu gối dang ra, cẳng chân vắt chéo trước người
+        // (chân phải gác lên trên/phía trước, chân trái nằm dưới), hai tay đặt lên đầu gối, lưng thẳng, thở nhẹ
+        const br = Math.sin(tt*1.5)*0.010;
+        group.position.y = -0.93 + br;
+        p.legR.rotation.set(-1.569, 0.223, 0.379);   p.shinR.rotation.set(1.240, 0.058, -1.545);
+        p.legL.rotation.set(-1.567, -0.246, -0.371); p.shinL.rotation.set(1.269, 0.684, 1.492);
+        p.armR.rotation.set(0.20, 0, -0.22);         p.foreR.rotation.set(-1.28, 0, 0);
+        p.armL.rotation.set(0.20, 0, 0.22);          p.foreL.rotation.set(-1.28, 0, 0);
+        p.body.rotation.set(0.05 + br*2, 0, 0);
+        p.head.rotation.set(-0.03, Math.sin(tt*0.7)*0.06, 0);
         if(p.tail) p.tail.rotation.set(0.35, 0, Math.sin(tt*1.2)*0.05);
       } else if(a === 'ride'){
         // ngồi xe / cabin: thân hơi cúi, đùi vuông góc, hai tay chống ra trước (vô-lăng / lan can)

@@ -5,7 +5,7 @@ const Player = (() => {
   const EMOTES = [
     { id:'wave', icon:'👋', name:'Vẫy tay', duration:2.5 },
     { id:'cry', icon:'😢', name:'Buồn', duration:3 },
-    { id:'sit', icon:'🧘', name:'Ngồi xếp bằng', duration:999 }, // toggle
+    { id:'lotus', icon:'🧘', name:'Ngồi xếp bằng', duration:999 }, // toggle · ngồi xếp bằng dưới đất (ngồi ghế là action 'sit' riêng)
     { id:'jump', icon:'⬆️', name:'Nhảy lên', duration:0.8 },
     { id:'dance1', icon:'💃', name:'Nhảy 1', duration:4 },
     { id:'dance2', icon:'🕺', name:'Nhảy 2', duration:4 },
@@ -40,8 +40,7 @@ const Player = (() => {
   function doAction(p, emoteId){
     const e = EMOTES.find(e=>e.id===emoteId);
     if(!e) return;
-    if(p.action === 'sit' && emoteId !== 'sit'){ p.action=null; }
-    if(emoteId === 'sit' && p.action === 'sit'){ p.action = null; return; }
+    if(emoteId === 'lotus' && p.action === 'lotus'){ p.action = null; return; }   // bấm lần nữa = đứng dậy
     p.action = emoteId; p.actionT = 0; p.actionDur = e.duration;
   }
 
@@ -49,5 +48,7 @@ const Player = (() => {
     p.chatBubble = text; p.chatT = 5;
   }
 
-  return { create, doAction, say, EMOTES };
+  const isSeated = a => a === 'sit' || a === 'lotus';   // sit = ngồi ghế · lotus = ngồi xếp bằng
+
+  return { create, doAction, say, EMOTES, isSeated };
 })();
