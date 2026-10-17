@@ -128,7 +128,7 @@ const UI = (() => {
   // Số xu có dấu chấm phân cách (1.234.567) — dùng chung cho HUD và Túi đồ
   const fmt = n => String(Math.floor(Number(n) || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
   // Một câu duy nhất cho mọi lần thiếu xu
-  const NO_COIN = 'Bạn không đủ xu để thực hiện giao dịch này.';
+  const NO_COIN = 'Bạn không đủ xu.';
 
   // ---- Panels ----
   function togglePanel(id){
@@ -215,26 +215,26 @@ const UI = (() => {
     if(tab==='lottery'){
       c.innerHTML = `
         <div class="shop-service">
-          <h4>🎰 Vé số City</h4>
-          <p>Chọn 3 số. Trúng giải thưởng lên đến 1000 xu! Vé: 10 xu</p>
-          <input id="lottoNum" type="text" maxlength="3" placeholder="VD: 123" style="width:100%;padding:8px;background:#1e1e30;border:1px solid #2a2a44;border-radius:6px;color:#fff;margin-bottom:8px;text-align:center;font-size:18px;letter-spacing:4px;" />
-          <button class="btn-primary" id="buyLotto">Mua vé (10 xu)</button>
+          <h4>🍀 Số may mắn</h4>
+          <p>Chọn 3 chữ số. Phần thưởng tối đa 1.000 xu. Phí tham gia: 10 xu.</p>
+          <input id="lottoNum" type="text" maxlength="3" placeholder="Ví dụ: 123" style="width:100%;padding:8px;background:#1e1e30;border:1px solid #2a2a44;border-radius:6px;color:#fff;margin-bottom:8px;text-align:center;font-size:18px;letter-spacing:4px;" />
+          <button class="btn-primary" id="buyLotto">Tham gia (10 xu)</button>
         </div>
         <div class="shop-service">
           <h4>📊 Kết quả gần nhất</h4>
-          <p id="lottoResult">Chưa có lần quay nào.</p>
+          <p id="lottoResult">Chưa có kết quả.</p>
         </div>`;
       $('buyLotto').onclick = ()=> onAction('buyLotto', $('lottoNum').value);
     } else if(tab==='rental'){
       c.innerHTML = `
         <div class="shop-service">
-          <h4>🎿 Giày trượt (tăng tốc 30s)</h4>
+          <h4>🎿 Giày trượt · tăng tốc 30 giây</h4>
           <p>Giá: 15 xu</p>
           <button class="btn-secondary" id="rentSkate">Thuê giày (15 xu)</button>
         </div>
         <div class="shop-service">
           <h4>🎣 Cần câu cao cấp</h4>
-          <p>Tăng tỉ lệ cá lớn. Giá: 100 xu</p>
+          <p>Tăng tỉ lệ câu được cá lớn. Giá: 100 xu</p>
           <button class="btn-secondary" id="buyRod">Mua cần (100 xu)</button>
         </div>`;
       $('rentSkate').onclick = ()=> onAction('rentSkate');
@@ -251,11 +251,11 @@ const UI = (() => {
         <button class="veh-card${v.taken?' taken':''}" data-slot="${v.i}" ${v.taken?'disabled':''}>
           <span class="veh-pic" style="background:${v.cssColor}">${kind==='plane'?'✈️':'🚗'}</span>
           <b>${v.name}</b>
-          <small>${v.taken ? 'Đang có người thuê' : v.price+' xu · 5 phút'}</small>
+          <small>${v.taken ? 'Đã có người thuê' : v.price+' xu · 5 phút'}</small>
         </button>`).join('') + `</div>`;
     };
     c.innerHTML = sec('car','🚗 Xe mui trần') + sec('plane','✈️ Máy bay') +
-      `<div class="mg-info">Chạm vào xe muốn thuê, nhân vật sẽ lên ngồi luôn. Xuống xe là xe tự về bãi.</div>`;
+      `<div class="mg-info">Chọn một phương tiện để thuê. Phương tiện sẽ tự trả về bãi khi bạn xuống.</div>`;
     c.querySelectorAll('[data-slot]').forEach(b=> b.onclick = ()=> onAction('rentVehicle', { slot:+b.dataset.slot }));
   }
 

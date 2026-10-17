@@ -43,7 +43,7 @@ const Net = (() => {
       p.chatT -= dt;
       if(p.chatT <= 0){
         p.chatT = 8 + Math.random()*15;
-        const lines = ["Hi mọi người!","Đi chơi không?","Có ai câu cá không?","Haha","Ở đâu vậy?","Đẹp quá đi","Let's go!"];
+        const lines = ["Xin chào mọi người!","Cùng đi dạo không?","Có ai đang câu cá không?","Thành phố hôm nay đẹp quá.","Mọi người đang ở đâu vậy?","Chúc mọi người chơi vui vẻ!"];
         emit('chat', { name:p.name, text: lines[Math.floor(Math.random()*lines.length)], id:p.id });
       }
       if(!p.moving && Math.random()<0.01){

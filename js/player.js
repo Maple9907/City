@@ -3,18 +3,18 @@
  */
 const Player = (() => {
   const EMOTES = [
-    { id:'wave', icon:'👋', name:'Giơ tay chiến thắng', duration:2.5 },
-    { id:'cry', icon:'😢', name:'Khóc', duration:3 },
+    { id:'wave', icon:'👋', name:'Vẫy tay', duration:2.5 },
+    { id:'cry', icon:'😢', name:'Buồn', duration:3 },
     { id:'sit', icon:'🧘', name:'Ngồi xếp bằng', duration:999 }, // toggle
-    { id:'jump', icon:'⬆️', name:'Nhảy', duration:0.8 },
-    { id:'dance1', icon:'💃', name:'Nhảy Bby WOW', duration:4 },
-    { id:'dance2', icon:'🕺', name:'Nhảy CHAT', duration:4 },
-    { id:'dance3', icon:'🐔', name:'Điệu nhảy gà vui nhộn', duration:4 },
-    { id:'dance4', icon:'❤️', name:'Nhảy love options', duration:4 },
-    { id:'dance5', icon:'🙏', name:'Nhảy sawadika', duration:4 },
-    { id:'dance6', icon:'🎵', name:'Điệu Rumba uyển chuyển', duration:4 },
-    { id:'dance7', icon:'🎤', name:'Biểu diễn hip hop', duration:4 },
-    { id:'holla', icon:'✊', name:'Holla', duration:2 },
+    { id:'jump', icon:'⬆️', name:'Nhảy lên', duration:0.8 },
+    { id:'dance1', icon:'💃', name:'Nhảy 1', duration:4 },
+    { id:'dance2', icon:'🕺', name:'Nhảy 2', duration:4 },
+    { id:'dance3', icon:'🐔', name:'Nhảy 3', duration:4 },
+    { id:'dance4', icon:'❤️', name:'Nhảy 4', duration:4 },
+    { id:'dance5', icon:'🙏', name:'Nhảy 5', duration:4 },
+    { id:'dance6', icon:'🎵', name:'Nhảy 6', duration:4 },
+    { id:'dance7', icon:'🎤', name:'Nhảy 7', duration:4 },
+    { id:'holla', icon:'✊', name:'Ăn mừng', duration:2 },
   ];
 
   function create(opts){

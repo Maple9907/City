@@ -29,7 +29,7 @@ const Fishing = (() => {
     if(state !== 'idle') return false;
     // kiểm tra mồi
     const bait = player.inventory.lure>0 ? 'lure' : (player.inventory.shrimp>0 ? 'shrimp' : (player.inventory.worm>0 ? 'worm' : null));
-    if(!bait){ onEvent({type:'error', msg:'Hết mồi! Hãy mua mồi ở cửa hàng.'}); return false; }
+    if(!bait){ onEvent({type:'error', msg:'Bạn đã hết mồi. Hãy mua thêm mồi.'}); return false; }
     player.inventory[bait]--;
     state = 'casting'; timer = 1.2;
     onEvent({type:'casting'});

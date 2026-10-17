@@ -17,9 +17,9 @@ const Park = (() => {
     if(lo && Array.isArray(lo.res) && lo.res.length === LO.PRIZES && lo.bet >= 1 && lo.bet <= LO.MAX && lo.pick >= 1 && lo.pick <= 99){
       const hits = lo.res.filter(v => v === lo.pick).length, win = Math.floor(lo.bet) * LO.MULT * hits;
       player.coins += win;
-      msg.push(hits ? `Ván quay số dở lần trước đã có kết quả: trúng ${hits} giải, +${nf(win)} xu` : 'Ván quay số dở lần trước đã có kết quả: không trúng');
+      msg.push(hits ? `Lượt quay trước đã hoàn tất: khớp ${hits} lượt, +${nf(win)} xu` : 'Lượt quay trước đã hoàn tất: không khớp lượt nào');
     }
-    if(d.mem > 0 && d.mem <= 100){ player.coins += Math.floor(d.mem); msg.push(`Hoàn ${Math.floor(d.mem)} xu ván lật hình dở`); }
+    if(d.mem > 0 && d.mem <= 100){ player.coins += Math.floor(d.mem); msg.push(`Đã hoàn ${Math.floor(d.mem)} xu từ ván lật hình chưa hoàn thành`); }
     if(msg.length){ UI.updateHUD(player); UI.toast(msg.join(' · ')); }
   }
 
@@ -54,8 +54,8 @@ const Park = (() => {
       if(RC.w<0){
         const first = RC.fin.reduce((b,f,i)=> f!==null && (b<0 || f<RC.fin[b]) ? i : b, -1);
         if(first>=0){ RC.w=first;
-          if(RC.tk===RC.w){ const win=Math.round(RC.fee*MULT); player.coins+=win; UI.updateHUD(player); UI.toast(`🎉 Trúng vé đua! +${win} xu`); }
-          else if(RC.tk!==null) UI.toast('Vé đua không trúng, chúc may mắn!'); }
+          if(RC.tk===RC.w){ const win=Math.round(RC.fee*MULT); player.coins+=win; UI.updateHUD(player); UI.toast(`Thú bạn chọn về nhất! +${win} xu`); }
+          else if(RC.tk!==null) UI.toast('Thú bạn chọn không về nhất. Chúc bạn may mắn lần sau.'); }
       }
       if(RC.fin.every(f=>f!==null && RC.rt-f>=RUNOUT)){ RC.ph='end'; RC.t=7; }
     }
@@ -66,21 +66,21 @@ const Park = (() => {
     RC.acc += dt;
     if(RC.acc>=.5){ RC.acc=0;
       const done = RC.ph==='run' ? RC.fin.filter(f=>f!==null).length : 0;
-      const st = RC.ph==='open' ? `Đang mở vé ${Math.ceil(RC.t)} giây` : RC.ph==='run' ? (RC.w<0 ? 'Đang đua!' : `${AN[RC.w]} nhất · ${done}/${N} về đích`) : `Thắng: ${AN[RC.w]}`;
-      Scene3D.setRaceBoard(`Đua thú · 7 thú · thưởng ×${MULT}`,'VÉ CỦA BẠN', RC.tk===null ? 'Chưa mua vé ván này' : AN[RC.tk],'TRẠNG THÁI',st); }
+      const st = RC.ph==='open' ? `Mở chọn thú: ${Math.ceil(RC.t)} giây` : RC.ph==='run' ? (RC.w<0 ? 'Đang đua!' : `${AN[RC.w]} nhất · ${done}/${N} về đích`) : `Về nhất: ${AN[RC.w]}`;
+      Scene3D.setRaceBoard(`Đua thú · 7 thú · nhận ×${MULT}`,'LỰA CHỌN CỦA BẠN', RC.tk===null ? 'Chưa chọn thú' : AN[RC.tk],'TRẠNG THÁI',st); }
     // đang chạy = chưa về đích hoặc còn chạy đà; con thắng chỉ ăn mừng sau khi đã dừng lại
     const moving = RC.ph==='run' ? RC.fin.map(f=> f===null || RC.rt-f<RUNOUT) : false;
     Scene3D.setRacers(RC.p, moving, RC.ph==='end' ? RC.w : (RC.ph==='run' && RC.w>=0 && !moving[RC.w] ? RC.w : -1));
   }
   function openRace(){
-    const b = showGamePanel('🎟 Trường đua thú');
-    if(RC.ph!=='open'){ b.innerHTML = `<div class="mg-info">${RC.ph==='run' ? 'Đang đua, chờ ván sau để mua vé.' : 'Ván đua đã kết thúc, chờ ván mới.'}</div>`; return; }
-    if(RC.tk!==null){ b.innerHTML = `<div class="mg-info">Vé của bạn: ${dot(RC.tk)}${RC.tk+1}. ${AN[RC.tk]}. Về nhất nhận thưởng x${MULT}.</div>`; return; }
-    b.innerHTML = AN.map((n,i)=>`<button class="shop-item" data-a="${i}">${dot(i)}${i+1}. ${n} — ${RC.fee} xu</button>`).join('') + `<div class="mg-info">Chọn một trong 7 bạn thú, về nhất được thưởng x${MULT} tiền vé.</div>`;
+    const b = showGamePanel('🐎 Đua thú');
+    if(RC.ph!=='open'){ b.innerHTML = `<div class="mg-info">${RC.ph==='run' ? 'Đang diễn ra cuộc đua. Vui lòng chờ ván sau.' : 'Ván đua đã kết thúc. Vui lòng chờ ván mới.'}</div>`; return; }
+    if(RC.tk!==null){ b.innerHTML = `<div class="mg-info">Bạn đã chọn: ${dot(RC.tk)}${RC.tk+1}. ${AN[RC.tk]}. Nếu về nhất, bạn nhận ×${MULT}.</div>`; return; }
+    b.innerHTML = AN.map((n,i)=>`<button class="shop-item" data-a="${i}">${dot(i)}${i+1}. ${n} — ${RC.fee} xu</button>`).join('') + `<div class="mg-info">Chọn một trong 7 thú. Nếu thú bạn chọn về nhất, bạn nhận ×${MULT} số xu tham gia.</div>`;
     b.querySelectorAll('[data-a]').forEach(btn=> btn.onclick = ()=>{
       if(RC.ph!=='open') return openRace();
       if(player.coins<RC.fee){ UI.toast(UI.NO_COIN); return; }
-      player.coins -= RC.fee; RC.tk = +btn.dataset.a; UI.updateHUD(player); UI.toast('Đã mua vé 🎟'); openRace();
+      player.coins -= RC.fee; RC.tk = +btn.dataset.a; UI.updateHUD(player); UI.toast('Đã chọn thú'); openRace();
     });
   }
 
@@ -92,10 +92,10 @@ const Park = (() => {
     const m = s.match(/(?:v=|youtu\.be\/|embed\/|shorts\/|live\/)([\w-]{11})/);
     return m ? m[1] : null;
   }
-  const PLAYING = ['📺 ĐANG PHÁT', 'Lại gần màn hình để xem'];
+  const PLAYING = ['ĐANG PHÁT', 'Đến gần màn hình để xem'];
   function playVideo(input, save=true){
     const id = parseYT(input);
-    if(!id){ UI.toast('Link YouTube không hợp lệ'); return; }
+    if(!id){ UI.toast('Liên kết YouTube không hợp lệ'); return; }
     videoId = id;
     frame.src = `https://www.youtube.com/embed/${id}?autoplay=1&rel=0&playsinline=1`;
     Scene3D.setScreenText(...PLAYING);
@@ -113,7 +113,7 @@ const Park = (() => {
   }
   function renderResults(box, items){
     box.innerHTML = '';
-    if(!items.length){ note(box, 'Không tìm thấy video nào, thử từ khóa khác nhé.'); return; }
+    if(!items.length){ note(box, 'Không tìm thấy video phù hợp. Hãy thử từ khóa khác.'); return; }
     items.forEach(it=>{
       const b = document.createElement('button'); b.className = 'tv-item'; b.type = 'button';
       const img = document.createElement('img'); img.src = `https://i.ytimg.com/vi/${it.id}/mqdefault.jpg`; img.alt = ''; img.loading = 'lazy';
@@ -121,18 +121,18 @@ const Park = (() => {
       const h = document.createElement('b'); h.textContent = it.title;
       const c = document.createElement('small'); c.textContent = it.channel;
       t.append(h, c); b.append(img, t);
-      b.onclick = ()=>{ playVideo(it.id, false); UI.toast('📺 Đang chiếu: ' + it.title.slice(0, 40)); UI.closePanel('tvPanel'); };
+      b.onclick = ()=>{ playVideo(it.id, false); UI.toast('Đang chiếu: ' + it.title.slice(0, 40)); UI.closePanel('tvPanel'); };
       box.appendChild(b);
     });
   }
-  const TV_OFF = 'Chức năng tìm kiếm đang tạm nghỉ, bạn vui lòng dán link video nhé.';
+  const TV_OFF = 'Tìm kiếm hiện chưa khả dụng. Vui lòng dán liên kết video.';
   async function searchVideos(q){
     const box = $('tvResults');
     if(!YTKEYS.count()){ note(box, TV_OFF); return; }
     const ck = q.toLowerCase();
     if(ytCache.has(ck)){ renderResults(box, ytCache.get(ck)); return; }
     const my = ++searchSeq;
-    note(box, '⏳ Đang tìm…');
+    note(box, 'Đang tìm…');
     try {
       const r = await ytSearch(q);
       if(my !== searchSeq) return;                 // đã có lượt tìm mới hơn
@@ -144,9 +144,9 @@ const Park = (() => {
       // Người chơi không cần biết chuyện key / quota: chi tiết kỹ thuật chỉ ghi ra console
       console.warn('[TV] tìm video thất bại:', r.reason, r.msg || '', r.reason === 'quota' ? `(reset sau ~${YTKEYS.resetInMin()} phút)` : '');
       if(r.reason === 'quota' || r.reason === 'key') note(box, TV_OFF);
-      else note(box, 'Hiện chưa tìm được video. Vui lòng thử lại sau.');
+      else note(box, 'Không thể tìm video lúc này. Vui lòng thử lại sau.');
     } catch(e){
-      if(my === searchSeq){ console.warn('[TV]', e); note(box, 'Mạng đang chập chờn, bạn thử lại sau nhé.'); }
+      if(my === searchSeq){ console.warn('[TV]', e); note(box, 'Kết nối không ổn định. Vui lòng thử lại.'); }
     }
   }
   // Gọi YouTube Data API và XOAY VÒNG key: key nào báo hết quota thì bỏ qua, thử key kế tiếp
@@ -178,14 +178,14 @@ const Park = (() => {
   // Nhập link/ID -> phát luôn; nhập chữ -> tìm kiếm
   function submitTv(){
     const v = $('tvUrl').value.trim();
-    if(!v){ UI.toast('Gõ tên video hoặc dán link YouTube'); return; }
+    if(!v){ UI.toast('Nhập tên video hoặc dán liên kết YouTube'); return; }
     if(parseYT(v)){ $('tvResults').innerHTML = ''; playVideo(v); return; }
     try { localStorage.setItem('gcity_yt', v); } catch(e){}
     searchVideos(v);
   }
   function stopVideo(){
     videoId = null; frame.src = 'about:blank'; frame.style.visibility = 'hidden';
-    Scene3D.setScreenText('GCITY TV', 'Chạm NPC 📺 cạnh sân khấu để chọn video');
+    Scene3D.setScreenText('GCITY TV', 'Chọn video tại quầy 📺 cạnh sân khấu');
   }
 
   // Ánh xạ hình chữ nhật FW×FH -> 4 điểm P (TL,TR,BR,BL) => CSS matrix3d
@@ -246,13 +246,13 @@ const Park = (() => {
           if(open.length < 2) return;
           moves++; b.querySelector('#mgMoves').textContent = moves;
           const [[c1,e1],[c2,e2]] = open; open = [];
-          if(e1 === e2){ if(++done === 6) end(moves<=8 ? 40 : moves<=12 ? 25 : 12, `Xong sau ${moves} lượt!`); }
+          if(e1 === e2){ if(++done === 6) end(moves<=8 ? 40 : moves<=12 ? 25 : 12, `Hoàn thành sau ${moves} lượt`); }
           else { lock = true; setTimeout(()=>{ [c1,c2].forEach(x=>{ x.classList.remove('up'); x.textContent = '?'; }); lock = false; }, 700); }
         };
         grid.appendChild(c);
       });
     }},
-    lo: { name:'🎟 Quay số may mắn', fee:0, custom:true, start(b){ loStart(b); } },
+    lo: { name:'⭐ Vòng quay may mắn', fee:0, custom:true, start(b){ loStart(b); } },
   };
 
   // ---------- Quay số may mắn ----------
@@ -266,23 +266,23 @@ const Park = (() => {
   function loBalance(){ const el = loQ('#loBal'); if(el) el.textContent = nf(player.coins) + ' xu'; }
   function loLock(on){
     ['#loPick', '#loBet', '#loGo'].forEach(s => { const el = loQ(s); if(el) el.disabled = on; });
-    const go = loQ('#loGo'); if(go) go.textContent = on ? 'Đang quay…' : 'Quay số';
+    const go = loQ('#loGo'); if(go) go.textContent = on ? 'Đang quay…' : 'Quay';
   }
   function loStart(body){
     if(!LO.busy) LO.bet = Math.max(1, Math.min(LO.bet, Math.floor(player.coins) || 1));
     LO.body = body;
     body.innerHTML = `
       <div class="lo-bal"><span>Số dư</span><b id="loBal">${nf(player.coins)} xu</b></div>
-      <div class="lo-rule">Số 01–99 · ${LO.PRIZES} giải · Thưởng ×${LO.MULT}/giải trúng</div>
+      <div class="lo-rule">Số từ 01 đến 99 · ${LO.PRIZES} lượt quay · ×${LO.MULT} mỗi lượt khớp</div>
       <div class="lo-row">
-        <label>Số chọn<input id="loPick" class="mg-input" inputmode="numeric" maxlength="2" value="${two(LO.pick)}"></label>
+        <label>Số của bạn<input id="loPick" class="mg-input" inputmode="numeric" maxlength="2" value="${two(LO.pick)}"></label>
         <label>Xu tham gia<input id="loBet" class="mg-input" inputmode="numeric" value="${LO.bet}"></label>
       </div>
       <div class="lo-rule">Tối đa ${nf(LO.MAX)} xu/lượt.</div>
-      <button class="btn-primary btn-wide" id="loGo">Quay số</button>
+      <button class="btn-primary btn-wide" id="loGo">Quay</button>
       <div class="lo-rule" id="loSum">${LO.summary}</div>
-      <div class="lo-title">Kết quả quay số</div>
-      <div class="lo-grid">${Array.from({length:LO.PRIZES}, (_, i) => `<div class="lo-box" id="loB${i}"><small>Giải ${i+1}</small><b>··</b></div>`).join('')}</div>`;
+      <div class="lo-title">Kết quả</div>
+      <div class="lo-grid">${Array.from({length:LO.PRIZES}, (_, i) => `<div class="lo-box" id="loB${i}"><small>Lượt ${i+1}</small><b>··</b></div>`).join('')}</div>`;
     body.querySelectorAll('#loPick, #loBet').forEach(inp => inp.oninput = () => { inp.value = inp.value.replace(/\D/g, ''); });
     // dựng lại các giải đã quay (nếu mở lại panel khi đang quay / sau khi quay xong)
     LO.res.slice(0, LO.shown).forEach((v, i) => {
@@ -293,7 +293,7 @@ const Park = (() => {
       if(LO.busy) return;
       const pick = parseInt(loQ('#loPick').value, 10), bet = parseInt(loQ('#loBet').value, 10);
       if(!(pick >= 1 && pick <= 99)){ UI.toast('Chọn số từ 01 đến 99'); return; }
-      if(!(bet >= 1)){ UI.toast('Nhập số xu muốn chơi'); return; }
+      if(!(bet >= 1)){ UI.toast('Vui lòng nhập số xu'); return; }
       if(bet > LO.MAX){ UI.toast(`Tối đa ${nf(LO.MAX)} xu/lượt`); return; }
       if(bet > player.coins){ UI.toast(UI.NO_COIN); return; }
       LO.pick = pick; LO.bet = bet; loSpin();
@@ -318,14 +318,14 @@ const Park = (() => {
       const v = LO.res[i], hit = v === pick; if(hit) hits++;
       LO.shown = i + 1;
       const el = loQ('#loB' + i); if(el){ el.classList.remove('spin'); el.classList.toggle('hit', hit); el.lastChild.textContent = two(v); }
-      if(hits) sum(`Trúng ${hits} giải → ×${hits * LO.MULT}`);
+      if(hits) sum(`Khớp ${hits} lượt · ×${hits * LO.MULT}`);
       await wait(120);
     }
     const win = bet * LO.MULT * hits;
     player.coins += win; pend.lo = null; UI.updateHUD(player); loBalance(); save();
     LO.busy = false; loLock(false);
-    if(hits){ sum(`🎉 Trúng ${hits} giải (×${hits * LO.MULT}) → +${nf(win)} xu`); UI.toast(`🎉 Quay số trúng ${hits} giải! +${nf(win)} xu`); }
-    else { sum(`Trượt rồi, mất ${nf(bet)} xu`); UI.toast('Quay số trượt, chúc may mắn lần sau!'); }
+    if(hits){ sum(`Khớp ${hits} lượt · +${nf(win)} xu`); UI.toast(`Chúc mừng! Khớp ${hits} lượt · +${nf(win)} xu`); }
+    else { sum(`Không khớp lượt nào · −${nf(bet)} xu`); UI.toast('Không khớp lượt nào. Chúc bạn may mắn lần sau.'); }
   }
 
   function showGamePanel(title){

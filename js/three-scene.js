@@ -32,8 +32,8 @@ const Scene3D = (() => {
 
   const ZONES = {
     plaza: { size:60, buildings:[
-      { x:-22, z:-22, w:10, h:8, d:10, color:0x8b4513, roof:0x5a2d0c, type:'cinema', name:'Rạp CGV' },
-      { x:22, z:-22, w:10, h:9, d:10, color:0x4a5568, roof:0x2d3748, type:'lottery', name:'Xổ số City' },
+      { x:-22, z:-22, w:10, h:8, d:10, color:0x8b4513, roof:0x5a2d0c, type:'cinema', name:'Rạp chiếu phim' },
+      { x:22, z:-22, w:10, h:9, d:10, color:0x4a5568, roof:0x2d3748, type:'lottery', name:'Số may mắn' },
       { x:-22, z:22, w:9, h:7, d:9, color:0x2b6cb0, roof:0x1a365d, type:'rental', name:'Thuê đồ' },
       { x:22, z:22, w:9, h:7, d:9, color:0x9f1239, roof:0x500724, type:'shop', name:'Cửa hàng' },
     ], trees:[
@@ -51,10 +51,10 @@ const Scene3D = (() => {
   Object.assign(ZONES.plaza, {
     size:104, race:{x:42.4,z:0,rin:1.7,rout:8,hs:9.6,ro:8.6,lanes:7}, rentLot:{x:-42,z:3}, wheel:{x:15.5,z:42,r:3,R:7.5,h:10.2,rz:1.2,fx:4.6,fz:1.75}, spawn:{x:0,z:9}, portal:{x:0,z:37,w:6,d:3,to:'fishing',label:'🚤 Đảo câu cá'},
     buildings:[
-      Bd(-22,-27,10,6,8,0,0xe8876f,0xc96a55,'shop','SUNNY MART'), Bd(22,-27,10,6,10,0,0x8b72c8,0x6a53a8,'lottery','XỔ SỐ CITY'),
+      Bd(-22,-27,10,6,8,0,0xe8876f,0xc96a55,'shop','SUNNY MART'), Bd(22,-27,10,6,10,0,0x8b72c8,0x6a53a8,'lottery','SỐ MAY MẮN'),
       Bd(-27,-9,6,10,9,H,0x4fa3ab,0x2f7f88,'cinema','RẠP PHIM'), Bd(-27,9,6,8,6,H,0x6fb7b0,0x3f8f8c,'fishshop','ĐẢO CÂU CÁ'),
       Bd(27,-9,6,10,10,-H,0xd77aa0,0xb55a82,'shop','PIZZA HOUSE'), Bd(27,9,6,10,8,-H,0xf0a35e,0xcf8040,'rental','THUÊ ĐỒ'),
-      Bd(-22,27,10,6,9,Math.PI,0x8b72c8,0x6a53a8,'shop','MOON BAR'), Bd(22,27,10,6,8,Math.PI,0x4fa3ab,0x2f7f88,'shop','HAPPY TOYS'),
+      Bd(-22,27,10,6,9,Math.PI,0x8b72c8,0x6a53a8,'shop','MOON CAFE'), Bd(22,27,10,6,8,Math.PI,0x4fa3ab,0x2f7f88,'shop','HAPPY TOYS'),
     ],
     trees:P2([[-12,-12],[12,-12],[-12,12],[12,12],[-13,-4],[13,-4],[-13,4],[13,4],[-10.5,27],[10.5,27],[-10.5,33.5],[10.5,33.5]]),
     lamps:P2([[-15.5,-9],[-15.5,9],[15.5,-9],[15.5,9],[-6,-15.5],[6,-15.5],[-6,15.5],[6,15.5],
@@ -652,7 +652,7 @@ const Scene3D = (() => {
     const bd=new THREE.Group(); box(14.6,6,0.5,0,3.8,0,0x1d3b34,bd); [-6,6].forEach(x=>box(0.6,1,0.6,x,0.5,0,0x1d3b34,bd));
     raceCanvas=document.createElement('canvas'); raceCanvas.width=1024; raceCanvas.height=384; raceTex=new THREE.CanvasTexture(raceCanvas);
     const pn=new THREE.Mesh(new THREE.PlaneGeometry(14,5.4),new THREE.MeshBasicMaterial({map:raceTex})); pn.position.set(0,3.8,0.27); bd.add(pn);
-    bd.position.set(R.x+R.ro+0.95,0,R.z); bd.rotation.y=-Math.PI/2; worldGroup.add(bd); setRaceBoard('Đua thú','VÉ CỦA BẠN','—','TRẠNG THÁI','Đang tải…'); setRacers(Array(N).fill(0),false,-1);
+    bd.position.set(R.x+R.ro+0.95,0,R.z); bd.rotation.y=-Math.PI/2; worldGroup.add(bd); setRaceBoard('Đua thú','LỰA CHỌN CỦA BẠN','—','TRẠNG THÁI','Đang tải…'); setRacers(Array(N).fill(0),false,-1);
     // --- bãi thuê xe + máy bay: xe thật đậu trong ô kẻ vạch, thuê qua NPC (xe được thuê rời bãi, trả về khi xuống) ---
     box(10,0.06,27,Lt.x,0.03,Lt.z+0.5,0x3a3f47);
     lotSlots = [];
@@ -874,7 +874,7 @@ const Scene3D = (() => {
       // ốc vít trang trí 4 góc nắp lưng
       [[-1,1],[1,1],[-1,-1],[1,-1]].forEach(([sx,sy])=>{ const s=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.12,0.06,8), ventMat); s.rotation.x=Math.PI/2; s.position.set(sx*(sc.w/2-0.8), sc.y+sc.h/2+sy*(sc.h/2-0.8), -0.32); g.add(s); });
       g.position.set(sc.x, 0, sc.z); worldGroup.add(g);
-      screenInfo = sc; setScreenText('GCITY TV', 'Chạm NPC 📺 cạnh sân khấu để chọn video');
+      screenInfo = sc; setScreenText('GCITY TV', 'Chọn video tại quầy 📺 cạnh sân khấu');
     }
     scene.add(worldGroup);
     return z;
