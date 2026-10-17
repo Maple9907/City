@@ -1,88 +1,98 @@
+
+Deploy · YML
 # ===== GCITY — Deploy tự động + chèn khoá YouTube từ Secrets =====
-# Khi bạn push code lên nhánh chính, workflow này:
-#   1. gom các file game vào _site/
-#   2. sinh _site/js/keys.js từ Secret `YT_KEYS` (mỗi dòng 1 key)
-#   3. đẩy _site/ lên GitHub Pages
-# → Key KHÔNG bao giờ nằm trong repo, chỉ xuất hiện ở bản build trên Pages.
+# Key YouTube chỉ nằm trong GitHub Secrets, KHÔNG BAO GIỜ nằm trong repo.
+# Mỗi lần push lên main/master, workflow này:
+#   1. chép file game sang thư mục tạm NGOÀI repo
+#   2. sinh js/keys.js (chỉ ở bản chép) từ Secret `YT_KEYS` (mỗi dòng 1 key)
+#   3. đẩy bản đó lên GitHub Pages
 #
 # CÀI ĐẶT (1 lần):
-#   Repo → Settings → Secrets and variables → Actions → New repository secret
-#     tên:  YT_KEYS
-#     giá trị: dán nhiều key, MỖI DÒNG 1 key, ví dụ:
-#         AIzaSy...01
-#         AIzaSy...02
-#         AIzaSy...03
-#   Repo → Settings → Pages → Source: "GitHub Actions"
+#   1) Repo → Settings → Secrets and variables → Actions → New repository secret
+#        tên:  YT_KEYS
+#        giá trị: mỗi dòng 1 key, ví dụ
+#            AIzaSy...01
+#            AIzaSy...02
+#   2) Repo → Settings → Pages → Build and deployment → Source: "GitHub Actions"
+#      (KHÔNG chọn "Deploy from a branch", chọn sai thì workflow đỏ ở bước Setup Pages / Deploy)
+#
+# Đổi/thêm key: sửa Secret rồi Actions → "Deploy GCITY" → Run workflow (không cần commit gì).
 name: Deploy GCITY
-
+ 
 on:
   push:
     branches: [main, master]
   workflow_dispatch:
-
+ 
 permissions:
   contents: read
   pages: write
   id-token: write
-
+ 
 concurrency:
   group: pages
-  cancel-in-progress: true
-
+  cancel-in-progress: false
+ 
 jobs:
   deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
       - name: Lấy code
         uses: actions/checkout@v4
-
-      - name: Gom file game vào _site
+ 
+      - name: Gom file game sang thư mục tạm
         run: |
           set -e
-          # Game có thể nằm ở thư mục gốc hoặc trong City-main/
+          # Game có thể nằm ở gốc repo hoặc trong City-main/
           if [ -f "index.html" ]; then SRC="."
           elif [ -f "City-main/index.html" ]; then SRC="City-main"
           else echo "::error::không thấy index.html ở gốc repo hoặc trong City-main/"; exit 1; fi
-          rm -rf _site && mkdir -p _site
-          cp -r "$SRC"/. _site/
-          rm -rf _site/.git _site/.github _site/node_modules _site/_site
+          # Chép ra NGOÀI repo để không bao giờ chép thư mục vào chính nó
+          SITE="$RUNNER_TEMP/site"
+          rm -rf "$SITE" && mkdir -p "$SITE"
+          cp -r "$SRC"/. "$SITE"/
+          rm -rf "$SITE/.git" "$SITE/.github" "$SITE/node_modules"
+          mkdir -p "$SITE/js"
+          echo "SITE=$SITE" >> "$GITHUB_ENV"
           echo "Deploy từ: $SRC"
-
+ 
       - name: Sinh js/keys.js từ Secret YT_KEYS
         env:
           YT_KEYS: ${{ secrets.YT_KEYS }}
         run: |
           set -e
-          node -e '
-            const raw = (process.env.YT_KEYS || "");
-            const keys = raw.split(/[\r\n]+/).map(s => s.trim())
-              .filter(s => /^AIza[0-9A-Za-z_\-]{10,}$/.test(s));
-            const uniq = [...new Set(keys)];
-            const body = `/* DO GITHUB ACTIONS SINH RA — đừng sửa tay, key sẽ bị mất khi deploy lần sau */\n`
-              + `window.GCITY_KEYS = ${JSON.stringify(uniq)};\n`;
-            require("fs").writeFileSync("_site/js/keys.js", body);
-            if(!uniq.length){
-              console.log("::warning::Secret YT_KEYS đang rỗng hoặc sai định dạng — site sẽ chạy nhưng không tìm được video theo từ khoá. Mỗi dòng phải là 1 key bắt đầu bằng AIza");
-            } else {
-              console.log("Đã chèn " + uniq.length + " key YouTube");
-            }
-          '
-          # kiểm tra không lọt key nào vào file khác ngoài js/keys.js
-          if grep -rqE "AIza[0-9A-Za-z_\-]{20,}" _site --exclude=keys.js; then
+          node - <<'NODE'
+          const raw = process.env.YT_KEYS || "";
+          const keys = raw.split(/[\s,;"']+/).map(s => s.trim())
+            .filter(s => /^AIza[0-9A-Za-z_-]{10,}$/.test(s));
+          const uniq = [...new Set(keys)];
+          const body = "/* DO GITHUB ACTIONS SINH RA từ Secret YT_KEYS — đừng sửa tay */\n"
+            + "window.GCITY_KEYS = " + JSON.stringify(uniq) + ";\n";
+          require("fs").writeFileSync(process.env.SITE + "/js/keys.js", body);
+          if (!uniq.length) {
+            console.log("::warning::Secret YT_KEYS đang rỗng hoặc sai định dạng — site vẫn chạy nhưng không tìm được video theo từ khoá. Mỗi dòng phải là 1 key bắt đầu bằng AIza");
+          } else {
+            console.log("Đã chèn " + uniq.length + " key YouTube");
+          }
+          NODE
+          # chắc chắn không lọt key sang file khác ngoài js/keys.js
+          if grep -rqE "AIza[0-9A-Za-z_-]{20,}" "$SITE" --exclude=keys.js; then
             echo "::error::phát hiện khoá YouTube nằm ngoài js/keys.js — kiểm tra lại js/config.js"; exit 1
           fi
-
+ 
       - name: Cấu hình Pages
         uses: actions/configure-pages@v5
-
-      - name: Đẩy lên GitHub Pages
+ 
+      - name: Đóng gói bản deploy
         uses: actions/upload-pages-artifact@v3
         with:
-          path: _site
-
-      - name: Phát hành
-        id: deploy
-        uses: actions/deploy-pages@v4
-
-      - name: Tóm tắt
-        run: echo "Đang chạy tại ${{ steps.deploy.outputs.page_url }}"
+          path: ${{ env.SITE }}
+ 
+      - name: Phát hành lên GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
+ 
+Claude đã trả lời xong
