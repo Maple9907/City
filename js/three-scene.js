@@ -14,6 +14,8 @@ const Scene3D = (() => {
   const camClamp = (v,a,b)=>Math.max(a,Math.min(b,v));
   const setCamDist = d => { camDist = camClamp(d, CAM.minDist, CAM.maxDist); };
   let camAngle = 0, camPitch = CAM.pitch0, camDist = CAM.dist0;
+  let camFollowHeading = false, camFollowOffset = 0, camDragT = 0;
+  const CAM_RECENTER_DELAY = 1400, CAM_RECENTER_RATE = 2.2;   // lái máy bay: thả tay kéo camera ~1.4s thì camera tự quay về sau lưng máy bay
   const camTarget = new THREE.Vector3(), camPtr = new Map();
   let camSnap = true, camLastT = 0, camLastX = 0, camLastZ = 0;
   let curZoneId = 'plaza', tapHandler = null;   // tapHandler(clientX, clientY): gọi khi chạm/click nhanh (không kéo) lên màn hình 3D
@@ -121,7 +123,9 @@ const Scene3D = (() => {
       const p = camPtr.get(e.pointerId); if(!p) return;
       const ti = tapInfo.get(e.pointerId); if(ti && Math.hypot(e.clientX-ti.x, e.clientY-ti.y) > 10) ti.ok = false;
       if(camPtr.size===1){
-        camAngle -= (e.clientX-p[0])*CAM.rotX;
+        const dx = (e.clientX-p[0])*CAM.rotX;
+        camAngle -= dx;
+        if(camFollowHeading){ camFollowOffset -= dx; camDragT = performance.now(); }
         camPitch = camClamp(camPitch + (e.clientY-p[1])*CAM.rotY, CAM.minPitch, CAM.maxPitch);
       } else if(camPtr.size===2){
         const o = [...camPtr.entries()].find(q=>q[0]!==e.pointerId)[1];
@@ -952,12 +956,22 @@ const Scene3D = (() => {
   }
 
   // ===== CAMERA =====
-  function updateCamera(px, pz, py = 0){
+  function wrapAngle(a){ return Math.atan2(Math.sin(a), Math.cos(a)); }
+  function updateCamera(px, pz, py = 0, heading = null){
     const now = performance.now();
     const dt = Math.min(0.05, (now-camLastT)/1000); camLastT = now;
     // dịch chuyển xa (qua cổng zone, spawn lại) → đặt camera ngay, không cho "bay" xuyên map
     if(Math.hypot(px-camLastX, pz-camLastZ) > 6) camSnap = true;
     camLastX = px; camLastZ = pz;
+    if(heading !== null && Number.isFinite(heading)){
+      // Camera đuổi theo sau lưng máy bay: "phải" luôn là phải trên màn hình. Kéo chuột/ngón tay chỉ là liếc quanh tạm thời:
+      // thả tay ~1.4s thì offset êm ái về 0 (lúc vừa lên máy bay cũng vậy: camera từ từ quay ra sau lưng thay vì giật).
+      if(!camFollowHeading){ camFollowOffset = wrapAngle(camAngle - (heading + Math.PI)); camFollowHeading = true; camDragT = 0; }
+      camFollowOffset = wrapAngle(camFollowOffset);
+      if(camPtr.size===0 && now-camDragT > CAM_RECENTER_DELAY) camFollowOffset *= Math.exp(-dt*CAM_RECENTER_RATE);
+      const desired = heading + Math.PI + camFollowOffset;
+      camAngle += wrapAngle(desired-camAngle) * (1 - Math.pow(1-CAM.follow, dt*60));
+    } else camFollowHeading = false;
 
     const cp = Math.cos(camPitch), ly = py + CAM.lookY;
     camTarget.set(px + Math.sin(camAngle)*cp*camDist,
@@ -974,6 +988,160 @@ const Scene3D = (() => {
 
   // ===== COLLISION / INTERACTION =====
   function getZone(zoneId){ return ZONES[zoneId]; }
+  // Plane hitboxes are local boxes supplied by Vehicles.build(). Transform all
+  // eight corners so pitch/bank affect the 3D volume, then use the projected
+  // convex hull for horizontal contact tests.
+  function planeParts(x,y,z,yaw,pitch,bank,boxes){
+    if(!boxes || !boxes.length) return [];
+    const e = new THREE.Euler(pitch||0, yaw||0, bank||0, 'YXZ');
+    const q = new THREE.Quaternion().setFromEuler(e);
+    const parts = [];
+    for(const b of boxes){
+      const center = new THREE.Vector3(b.x,b.y,b.z).applyQuaternion(q).add(new THREE.Vector3(x,y,z));
+      const ax = new THREE.Vector3(1,0,0).applyQuaternion(q);
+      const ay = new THREE.Vector3(0,1,0).applyQuaternion(q);
+      const az = new THREE.Vector3(0,0,1).applyQuaternion(q);
+      const hx=b.w/2, hy=b.h/2, hz=b.d/2, points=[];
+      let minY=Infinity, maxY=-Infinity;
+      for(const sx of [-1,1]) for(const sy of [-1,1]) for(const sz of [-1,1]){
+        const p = new THREE.Vector3(
+          center.x + ax.x*sx*hx + ay.x*sy*hy + az.x*sz*hz,
+          center.y + ax.y*sx*hx + ay.y*sy*hy + az.y*sz*hz,
+          center.z + ax.z*sx*hx + ay.z*sy*hy + az.z*sz*hz
+        );
+        points.push({x:p.x,z:p.z}); minY=Math.min(minY,p.y); maxY=Math.max(maxY,p.y);
+      }
+      parts.push({ points:convexHull2(points), minY, maxY });
+    }
+    return parts;
+  }
+  function convexHull2(points){
+    const p=points.slice().sort((a,b)=>a.x-b.x||a.z-b.z), cross=(o,a,b)=>(a.x-o.x)*(b.z-o.z)-(a.z-o.z)*(b.x-o.x);
+    if(p.length<4) return p;
+    const lo=[], hi=[];
+    for(const v of p){ while(lo.length>1&&cross(lo[lo.length-2],lo[lo.length-1],v)<=0) lo.pop(); lo.push(v); }
+    for(let i=p.length-1;i>=0;i--){ const v=p[i]; while(hi.length>1&&cross(hi[hi.length-2],hi[hi.length-1],v)<=0) hi.pop(); hi.push(v); }
+    lo.pop(); hi.pop(); return lo.concat(hi);
+  }
+  function rectPoly(x,z,hx,hz,ry=0){
+    const c=Math.cos(ry),s=Math.sin(ry);
+    return [[-hx,-hz],[hx,-hz],[hx,hz],[-hx,hz]].map(([a,b])=>({x:x+a*c+b*s,z:z-a*s+b*c}));
+  }
+  function polygonsOverlap(a,b){
+    const separated = (poly, other)=>{
+      for(let i=0;i<poly.length;i++){
+        const p=poly[i], n=poly[(i+1)%poly.length], ax=-(n.z-p.z), az=n.x-p.x;
+        let amin=Infinity,amax=-Infinity,bmin=Infinity,bmax=-Infinity;
+        for(const v of poly){ const d=v.x*ax+v.z*az; amin=Math.min(amin,d); amax=Math.max(amax,d); }
+        for(const v of other){ const d=v.x*ax+v.z*az; bmin=Math.min(bmin,d); bmax=Math.max(bmax,d); }
+        if(amax < bmin-1e-5 || bmax < amin-1e-5) return true;
+      }
+      return false;
+    };
+    return !separated(a,b) && !separated(b,a);
+  }
+  function pointInPoly(x,z,poly){
+    let inside=false;
+    for(let i=0,j=poly.length-1;i<poly.length;j=i++){
+      const a=poly[i],b=poly[j];
+      if(((a.z>z)!==(b.z>z)) && x<(b.x-a.x)*(z-a.z)/(b.z-a.z)+a.x) inside=!inside;
+    }
+    return inside;
+  }
+  function polyHitsCircle(poly,x,z,r){
+    if(pointInPoly(x,z,poly)) return true;
+    for(let i=0;i<poly.length;i++){
+      const a=poly[i],b=poly[(i+1)%poly.length],dx=b.x-a.x,dz=b.z-a.z;
+      const t=Math.max(0,Math.min(1,((x-a.x)*dx+(z-a.z)*dz)/(dx*dx+dz*dz||1)));
+      if(Math.hypot(x-(a.x+t*dx),z-(a.z+t*dz)) < r) return true;
+    }
+    return false;
+  }
+  function aircraftCollision(zoneId,x,y,zpos,yaw,pitch,bank,boxes){
+    const zone=ZONES[zoneId]; if(!zone) return {kind:'boundary'};
+    const parts=planeParts(x,y,zpos,yaw,pitch,bank,boxes);
+    if(!parts.length) return null;
+    const bottomOffset=Math.min(...parts.map(p=>p.minY))-y;
+    const contact=(kind,top,object)=>({kind,top,bottomOffset,object});
+    // Keep the entire wing span inside the playable area.
+    if(parts.some(p=>p.points.some(v=>Math.abs(v.x)>zone.size/2||Math.abs(v.z)>zone.size/2))) return {kind:'boundary'};
+    for(const b of zone.buildings||[]){
+      const base=0.45, roofY=0.45+b.h+0.32, ry=b.ry||0, swap=Math.abs(Math.sin(ry))>0.5;
+      const footprint=rectPoly(b.x,b.z,(swap?b.d:b.w)/2+0.4,(swap?b.w:b.d)/2+0.4,ry);
+      for(const p of parts){
+        if(p.maxY <= base+0.02 || p.minY >= roofY-0.02) continue;
+        if(polygonsOverlap(p.points,footprint)) return contact('building',roofY,b);
+      }
+    }
+    // Low-poly trees, lamps, and the fountain have their own vertical extent;
+    // aircraft above their actual height can pass over instead of being forced
+    // to climb to a global "safe" altitude.
+    for(const t of zone.trees||[]){
+      const radius=(t.r||1.2)+0.15, top=5.4;
+      for(const p of parts) if(p.maxY>0.1&&p.minY<top&&polyHitsCircle(p.points,t.x,t.z,radius)) return contact('tree',top,t);
+    }
+    for(const l of zone.lamps||[]){
+      for(const p of parts) if(p.maxY>0.1&&p.minY<4.5&&polyHitsCircle(p.points,l.x,l.z,0.42)) return contact('lamp',4.5,l);
+    }
+    if(zone.fountain){
+      for(const p of parts) if(p.maxY>0.1&&p.minY<5.1&&polyHitsCircle(p.points,zone.fountain.x,zone.fountain.z,Fountain.RADIUS)) return contact('fountain',5.1,zone.fountain);
+    }
+    if(zone.benches){
+      for(const b of zone.benches){
+        const ry=b.ry||0, poly=rectPoly(b.x,b.z,1.05,0.36,ry);
+        for(const p of parts) if(p.maxY>0.1&&p.minY<1.35&&polygonsOverlap(p.points,poly)) return contact('bench',1.35,b);
+      }
+    }
+    if(zone.screen){
+      const s=zone.screen, poly=rectPoly(s.x,s.z,s.w/2,0.55,0);
+      for(const p of parts) if(p.maxY>s.y&&p.minY<s.y+s.h&&polygonsOverlap(p.points,poly)) return contact('screen',s.y+s.h,s);
+    }
+    // Vòng quay: cả khối (2 vành + cabin + chân khung chữ A) cao tới h+R — bay thấp hơn đỉnh vòng thì đâm vào vòng
+    if(zone.wheel){
+      const W=zone.wheel, top=W.h+W.R+0.5, poly=rectPoly(W.x,W.z,W.R+1.2,Math.max(W.fz,W.rz)+0.4,0);
+      for(const p of parts) if(p.maxY>0.1&&p.minY<top&&polygonsOverlap(p.points,poly)) return contact('wheel',top,W);
+    }
+    // Trường đua: sân vận động (2 đoạn thẳng + 2 nửa vòng) có lan can/bụi cao ~1.2; cổng đích nhô lên ~4.7 ngay vạch đích
+    if(zone.race){
+      const Rc=zone.race, rect=rectPoly(Rc.x,Rc.z,Rc.ro,Rc.hs,0);
+      for(const p of parts){
+        if(p.maxY>0.1&&p.minY<1.3&&(polygonsOverlap(p.points,rect)||polyHitsCircle(p.points,Rc.x,Rc.z+Rc.hs,Rc.ro)||polyHitsCircle(p.points,Rc.x,Rc.z-Rc.hs,Rc.ro))) return contact('race',1.3,Rc);
+      }
+      const gx0=Rc.x+Rc.rin-0.9, gx1=Rc.x+Rc.rout+0.9, gate=rectPoly((gx0+gx1)/2,Rc.z,(gx1-gx0)/2,0.5,0);
+      for(const p of parts) if(p.maxY>0.1&&p.minY<4.8&&polygonsOverlap(p.points,gate)) return contact('gate',4.8,Rc);
+    }
+    // Sân khấu công viên: sàn gỗ 22×7 cao 0.44 tâm (0,-35) + 2 loa 1.8 (cùng toạ độ với collides())
+    if(zoneId==='plaza'){
+      const deck=rectPoly(0,-35,11.2,3.7,0);
+      for(const p of parts) if(p.maxY>0.05&&p.minY<0.5&&polygonsOverlap(p.points,deck)) return contact('stage',0.5,null);
+      for(const sx of [-10.5,10.5]){ const spk=rectPoly(sx,-36,0.85,0.8,0); for(const p of parts) if(p.maxY>0.05&&p.minY<1.9&&polygonsOverlap(p.points,spk)) return contact('speaker',1.9,null); }
+    }
+    if(zone.island && y<5 && Island.collides(x,zpos,2)) return {kind:'island'};
+    return null;
+  }
+  function roofLandingAltitude(zoneId,x,zpos,yaw,boxes){
+    const zone=ZONES[zoneId]; if(!zone || zone.island) return null;
+    const parts=planeParts(x,0,zpos,yaw,0,0,boxes); if(!parts.length) return null;
+    let best=null;
+    for(const b of zone.buildings||[]){
+      const ry=b.ry||0, swap=Math.abs(Math.sin(ry))>0.5, c=Math.cos(ry), s=Math.sin(ry);
+      const hx=(swap?b.d:b.w)/2+0.4-0.12, hz=(swap?b.w:b.d)/2+0.4-0.12;
+      let fits=true, minY=Infinity;
+      for(const p of parts){
+        minY=Math.min(minY,p.minY);
+        for(const v of p.points){
+          const dx=v.x-b.x,dz=v.z-b.z, lx=dx*c-dz*s, lz=dx*s+dz*c;
+          if(Math.abs(lx)>hx||Math.abs(lz)>hz){ fits=false; break; }
+        }
+        if(!fits) break;
+      }
+      if(fits){
+        const top=0.45+b.h+0.32, altitude=top-minY;
+        if(best===null||altitude<best) best=altitude;
+      }
+    }
+    return best;
+  }
   function collides(zoneId, x, zpos, r=0.8, skipFurn){
     const z = ZONES[zoneId];
     // Đảo câu cá (v20): ra khỏi mép cát/bến là rơi xuống nước; chòi, dừa, đèn, dù, đá, bụi là vật cản (Island.collides)
@@ -1149,7 +1317,7 @@ const Scene3D = (() => {
   }
 
   return { init, buildZone, createCharacter, setChatBubble, updateCharacter,
-    updateCamera, getMoveDir, collides, atPortal, nearBuilding, atDock, render, nearSpot, pickBench, nearBench, setTapHandler, setScreenText, screenCorners2D, setRacers, setRaceBoard, getLotSlots, setLotTaken, setLotBadgeVisible, lotText,
+    updateCamera, getMoveDir, collides, aircraftCollision, roofLandingAltitude, atPortal, nearBuilding, atDock, render, nearSpot, pickBench, nearBench, setTapHandler, setScreenText, screenCorners2D, setRacers, setRaceBoard, getLotSlots, setLotTaken, setLotBadgeVisible, lotText,
     getZone, groundY, CHAR_DEFS,
     // ngày / đêm (tự chạy theo giờ thiết bị)
     setNight, followClock, isNight, get night(){ return DN.k; }, get nightTarget(){ return DN.target; },

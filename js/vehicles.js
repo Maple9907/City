@@ -93,7 +93,18 @@ const Vehicles = (() => {
     const sp = new THREE.ConeGeometry(0.1, 0.22, 10); sp.rotateX(Math.PI/2);
     const spin = new THREE.Mesh(sp, M(0xcccccc)); spin.position.z = 0.1; prop.add(spin);
     g.add(prop);
-    g.userData = { seat:{ x:0, y:1.18, z:0.4 }, wheels:[], prop, maxSpeed:13 };
+    // Hitboxes follow the visible silhouette instead of treating the aircraft as
+    // one large 2D circle: fuselage, wing, tailplane, fin, propeller, and gear.
+    const flightBoxes = [
+      { x:0, y:0.72, z:0,    w:0.8, h:0.8, d:3.2 },   // fuselage
+      { x:0, y:0.62, z:0.15, w:4.9, h:0.1, d:1.0 },   // main wing
+      { x:0, y:0.8,  z:-1.35,w:1.7, h:0.1, d:0.5 },   // tailplane
+      { x:0, y:1.15, z:-1.38,w:0.1, h:0.7, d:0.55 },  // fin
+      { x:0, y:0.72, z:1.92, w:1.5, h:1.5, d:0.15 },  // propeller disc
+      { x:0, y:0.24, z:0.3,  w:1.25,h:0.44,d:0.44 },  // main landing gear
+      { x:0, y:0.24, z:1.35, w:0.3, h:0.44,d:0.3 }    // tail wheel
+    ];
+    g.userData = { seat:{ x:0, y:1.18, z:0.4 }, wheels:[], prop, maxSpeed:13, flightBoxes };
     return g;
   }
 

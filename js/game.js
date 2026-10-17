@@ -11,7 +11,7 @@
   let riding = null;   // {type:'car'|'plane', slot, v:THREE.Group, prop, wheels, seat, yaw, alt, targetAlt, remain, maxSpeed, engine, autoDescend}
   const vInput = { fwd:false, back:false, up:false, down: false };
   const SHOW_FPS = /[?&]debug=1/.test(location.search);   // bộ đếm FPS chỉ dành cho dev (thêm ?debug=1 vào URL)
-  const _fseat = new THREE.Vector3();
+  const _fseat = new THREE.Vector3(), _seatOffset = new THREE.Vector3();
   // ===== Lưu dữ liệu người chơi =====
   // localStorage là chính (đủ: tên, giới tính, nhân vật, xu, túi đồ). Cookie giữ bản rút gọn (tên/giới tính/nhân vật/xu) để dự phòng
   // khi localStorage bị chặn/xoá. Dữ liệu gắn với TÊN MIỀN: đổi domain (www ↔ không www, http ↔ https, localhost ↔ 127.0.0.1) là coi như máy mới.
@@ -446,17 +446,24 @@
   }
   // vị trí mông nhân vật ngồi (world) từ vị trí/hướng xe + ghế local; y trừ 0.6 vì ở tư thế ngồi hông nằm cao hơn gốc nhân vật ~0.7
   function seatWorld(r){
-    const c = Math.cos(r.yaw), sn = Math.sin(r.yaw), st = r.seat;
+    const st = r.seat;
+    if(r.type==='plane'){
+      _seatOffset.set(st.x,st.y-0.6,st.z).applyEuler(r.v.rotation);
+      return { x:r.v.position.x+_seatOffset.x, y:r.alt+_seatOffset.y, z:r.v.position.z+_seatOffset.z };
+    }
+    const c = Math.cos(r.yaw), sn = Math.sin(r.yaw);
     return { x: r.v.position.x + st.x*c + st.z*sn, y: r.alt + st.y - 0.6, z: r.v.position.z - st.x*sn + st.z*c };
   }
   function mountVehicle(slot){
     if(riding){ UI.toast('Bạn đang sử dụng một phương tiện'); return; }
     const v = Vehicles.build(slot.kind, slot.color), ud = v.userData;
-    v.position.set(slot.x, 0, slot.z); v.rotation.y = slot.yaw;
+    v.position.set(slot.x, slot.kind==='plane'?0.03:0, slot.z); v.rotation.y = slot.yaw;
     Scene3D.scene.add(v);
     Scene3D.setLotTaken(slot.i, true);                  // xe rời khỏi bãi, bong bóng đếm còn x-1
     Scene3D.setLotBadgeVisible(false);
-    riding = { type:slot.kind, slot:slot.i, v, prop:ud.prop||null, wheels:ud.wheels||[], seat:ud.seat, yaw:slot.yaw, alt:0, targetAlt:0,
+    if(slot.kind==='plane') v.rotation.order='YXZ';
+    riding = { type:slot.kind, slot:slot.i, v, prop:ud.prop||null, wheels:ud.wheels||[], seat:ud.seat, flightBoxes:ud.flightBoxes||null,
+               yaw:slot.yaw, pitch:0, bank:0, alt:slot.kind==='plane'?0.03:0, targetAlt:slot.kind==='plane'?0.03:0,
                remain:Vehicles.RENT_SEC, maxSpeed:ud.maxSpeed, autoDescend:false, engine:0, speed:0, netT:0, stuckT:0, hintT:0 };
     const um = playerMesh.userData;
     um.moving = false; um.action = 'ride'; um.actionT = 0; player.action = 'ride';   // ngồi thật lên ghế (tư thế lái xe)
@@ -467,7 +474,7 @@
     const hud = $('vehicleHud'); hud.classList.remove('hidden');
     hud.classList.toggle('car-mode', slot.kind!=='plane');
     $('rentTimer').textContent = 'Xuống xe · 5:00';
-    UI.toast(slot.kind==='plane' ? 'Giữ "Bay lên" (hoặc phím Space) để cất cánh' : 'Dùng joystick hoặc nút Tiến/Lùi để lái');
+    UI.toast(slot.kind==='plane' ? 'Giữ "Bay lên" (hoặc Space) để cất cánh; thả Tiến để lơ lửng' : 'Dùng joystick hoặc nút Tiến/Lùi để lái');
   }
   function dismountVehicle(){
     if(!riding) return;
@@ -478,6 +485,7 @@
     const spot = freeSpotNear(v.position.x, v.position.z);   // không bao giờ đặt nhân vật vào trong nhà / ngoài bản đồ
     playerMesh.position.set(spot.x, 0, spot.z);
     playerMesh.userData.face = yaw; playerMesh.userData.moving = false;
+    playerMesh.rotation.set(0,yaw,0);
     playerMesh.userData.action = null; player.action = null;
     player.x = spot.x; player.y = spot.z;
     try{ Net.sendMyState({x:player.x, y:player.y, action:null}); }catch(e){}
@@ -499,7 +507,7 @@
     const sp = Scene3D.getZone(currentZone).spawn || { x:0, z:0 };
     return { x:sp.x, z:sp.z };
   }
-  const PLANE = { ROOF:10.5, MAX_ALT:22, VS:9, MIN_FLY:5, REV:0.45, LIMIT:52 };   // ROOF: cao hơn nóc nhà cao nhất (collision bỏ qua khi alt>10); LIMIT: bán kính thế giới (plaza = 53)
+  const PLANE = { GROUND:0.03, MAX_ALT:22, VS:9, REV:0.45, LIMIT:52, BANK:0.52, PITCH:0.28 };
   function updateRiding(dt){
     const r = riding; if(!r) return;
     let thr = -input.joy.y;
@@ -514,47 +522,78 @@
     const isPlane = r.type==='plane';
     const upKey = vInput.up || input.keys['Space'] || input.keys['KeyR'];      // Bay lên: nút HUD hoặc Space / R (bản cũ: bàn phím không có phím nào)
     const downKey = vInput.down || input.keys['KeyF'] || input.keys['KeyC'];   // Hạ cánh: nút HUD hoặc F / C
-    // đang ở trên vật cản (nóc nhà, cây, đài phun, mép bản đồ…) thì CHƯA được hạ xuống — bản cũ hạ thẳng vào trong toà nhà rồi nhả nhân vật ở đó
-    const overObstacle = isPlane && Scene3D.collides(currentZone, r.v.position.x, r.v.position.z, 1.2);
+    const roofAlt = isPlane ? Scene3D.roofLandingAltitude(currentZone,r.v.position.x,r.v.position.z,r.yaw,r.flightBoxes) : null;
     if(isPlane){
-      if(r.autoDescend){ r.targetAlt = 0; if(thr < 0.4) thr = 0.4; }
+      if(r.autoDescend) r.targetAlt = roofAlt===null ? 0 : roofAlt;
       else {
         // chỉ cất cánh được khi động cơ đã nổ đủ mạnh (cánh quạt đang quay)
         if(upKey && r.engine > 0.45) r.targetAlt += PLANE.VS*dt;
         if(downKey) r.targetAlt -= PLANE.VS*dt;
       }
-      if(overObstacle && r.alt > 0.5) r.targetAlt = Math.max(r.targetAlt, PLANE.ROOF);
-      r.targetAlt = Math.max(0, Math.min(PLANE.MAX_ALT, r.targetAlt));
-      // tốc độ lên/xuống tối đa 9/giây, êm dần khi tới nơi (bản cũ: tự hạ cánh — hết giờ thuê / bấm Xuống xe trên không — đuổi kiểu mũ nên từ độ cao 22 rơi ~55/giây, đáp "đập" xuống đất)
-      r.alt += Math.max(-PLANE.VS, Math.min(PLANE.VS, (r.targetAlt - r.alt)*3)) * dt;
-      if(r.alt < 0.05 && r.targetAlt < 0.05) r.alt = 0;
+      r.targetAlt = Math.max(roofAlt===null?PLANE.GROUND:roofAlt, Math.min(PLANE.MAX_ALT, r.targetAlt));
+      // Altitude is held when vertical input is released, including at zero
+      // forward speed, so the plane can hover instead of being forced to cruise.
+      const climb = Math.max(-PLANE.VS, Math.min(PLANE.VS, (r.targetAlt-r.alt)*3));
+      r.alt += climb * dt;
+      const pitchTarget = Math.max(-PLANE.PITCH,Math.min(PLANE.PITCH,climb/PLANE.VS*PLANE.PITCH));
+      r.pitch += (pitchTarget-r.pitch)*Math.min(1,dt*4);
+      if(r.alt < PLANE.GROUND+0.02 && r.targetAlt <= PLANE.GROUND+0.01) r.alt = PLANE.GROUND;
     }
     const airborne = isPlane && r.alt > 0.5;    // đã rời đất (vẫn có thể đâm vào công trình nếu bay thấp)
-    const overBuildings = isPlane && (r.alt > 10 || (overObstacle && airborne));   // trên nóc nhà -> không va chạm; đang kẹt trong vật cản lúc ở trên không -> bay thoát ra (đồng thời tự nâng lên ROOF)
     if(isPlane){ const bb = $('vBack'), lb = airborne ? 'Giảm ga' : 'Lùi'; if(bb && bb.textContent !== lb) bb.textContent = lb; }   // máy bay không bay lùi được: trên không nút này là giảm ga
-    if(overObstacle && airborne && (r.autoDescend || downKey)){
-      r.hintT -= dt; if(r.hintT <= 0){ r.hintT = 4; UI.toast('Bên dưới có vật cản — bay ra chỗ trống để hạ cánh'); }
-      if(r.autoDescend){ r.stuckT += dt; if(r.stuckT > 6){ dismountVehicle(); return; } }   // hết giờ thuê mà vẫn chưa ra khỏi vật cản: trả xe, nhân vật được đặt vào chỗ trống gần nhất
-    } else r.stuckT = 0;
-    // vận tốc: máy bay trên không không đứng yên và KHÔNG bay lùi được (Lùi = giảm ga về tốc độ chậm nhất); dưới đất lùi chậm hơn tiến. Máy bay có quán tính (lăn bánh/tăng tốc êm), xe giữ nguyên như cũ
-    const tgt = airborne ? (thr > 0 ? PLANE.MIN_FLY + thr*(r.maxSpeed - PLANE.MIN_FLY) : PLANE.MIN_FLY)
+    // Air throttle runs down to exactly zero. Releasing "Tiến" while aloft
+    // settles into a stationary hover; "Lùi" reduces speed/brakes to hover.
+    const tgt = airborne ? (thr > 0 ? thr*r.maxSpeed : 0)
                          : (thr >= 0 ? thr*r.maxSpeed : thr*r.maxSpeed*(isPlane ? PLANE.REV : 1));
     r.speed += (tgt - r.speed) * (isPlane ? Math.min(1, dt*(Math.abs(tgt) > Math.abs(r.speed) ? 2.2 : 3.5)) : 1);
     if(!airborne && Math.abs(tgt) < 0.01 && Math.abs(r.speed) < 0.15) r.speed = 0;
     const speed = r.speed;
-    r.yaw += steer * dt * 2.4 * (0.25 + Math.min(1, Math.abs(speed)/7));
+    // yaw tăng = mũi quay sang TRÁI (ngược chiều kim đồng hồ nhìn từ trên xuống). Máy bay có camera đuổi sau lưng nên
+    // "phải" phải đánh mũi sang phải trên màn hình → đảo dấu cho máy bay (xe giữ nguyên như bản gốc).
+    r.yaw += (isPlane ? -steer : steer) * dt * 2.4 * (0.25 + Math.min(1, Math.abs(speed)/7));
+    if(isPlane){
+      const bankTarget = steer*PLANE.BANK*(0.35+Math.min(1,Math.abs(speed)/7));   // phải → cánh phải chúi xuống (rotation.z dương)
+      r.bank += (bankTarget-r.bank)*Math.min(1,dt*3.5);
+    }
     const nx = r.v.position.x + Math.sin(r.yaw)*speed*dt;
     const nz = r.v.position.z + Math.cos(r.yaw)*speed*dt;
     let x = r.v.position.x, z = r.v.position.z;
-    if(!overBuildings){
-      if(!Scene3D.collides(currentZone, nx, r.v.position.z)) x = nx;
-      if(!Scene3D.collides(currentZone, x, nz)) z = nz;
-    } else {
-      const L = PLANE.LIMIT, d = Math.hypot(nx, nz), k = d > L ? L/d : 1;   // vòng tròn như collides() — bản cũ hình vuông ±54 cho bay ra góc ngoài thế giới, hạ cánh ở đó là kẹt
-      x = nx*k; z = nz*k;
+    const planeBlocked = (px,pz)=>isPlane
+      ? (!!Scene3D.aircraftCollision(currentZone,px,r.alt,pz,r.yaw,-r.pitch,r.bank,r.flightBoxes) ||
+         (r.alt<0.35 && Scene3D.collides(currentZone,px,pz,1.2)))
+      : Scene3D.collides(currentZone,px,pz);
+    if(!planeBlocked(nx,r.v.position.z)) x = nx;
+    if(!planeBlocked(x,nz)) z = nz;
+    if(isPlane){
+      const L=PLANE.LIMIT-2.5,d=Math.hypot(x,z);
+      if(d>L){ const k=L/d; x*=k; z*=k; }
     }
     r.v.position.set(x, r.alt, z);
-    r.v.rotation.y = r.yaw;
+    if(isPlane) r.v.rotation.set(-r.pitch,r.yaw,r.bank,'YXZ');
+    else r.v.rotation.y = r.yaw;
+    // If a descent reaches a structure, stop at its actual top rather than
+    // letting the aircraft intersect the wall/prop. Buildings remain landable.
+    if(isPlane){
+      const hit=Scene3D.aircraftCollision(currentZone,x,r.alt,z,r.yaw,-r.pitch,r.bank,r.flightBoxes);
+      if(hit && Number.isFinite(hit.top)){
+        const minAltitude=hit.top-hit.bottomOffset+0.02;
+        r.alt=Math.max(r.alt,minAltitude); r.targetAlt=Math.max(r.targetAlt,minAltitude);
+        r.v.position.y=r.alt;
+        if(hit.kind==='building'){
+          r.roofContactAlt=minAltitude; r.roofContactX=x; r.roofContactZ=z;
+        }
+        if(r.autoDescend){ r.autoLandAlt=minAltitude; r.autoLandX=x; r.autoLandZ=z; }
+      } else {
+        if(r.roofContactAlt!==undefined &&
+           (Math.hypot(x-r.roofContactX,z-r.roofContactZ)>0.6 || r.alt>r.roofContactAlt+0.5)){
+          delete r.roofContactAlt; delete r.roofContactX; delete r.roofContactZ;
+        }
+        if(r.autoLandAlt!==undefined &&
+           (Math.hypot(x-r.autoLandX,z-r.autoLandZ)>0.6 || r.alt>r.autoLandAlt+0.5)){
+          delete r.autoLandAlt; delete r.autoLandX; delete r.autoLandZ;
+        }
+      }
+    }
     // cánh quạt: đứng yên khi đỗ; bấm Bay lên / chạy trên đường băng thì bắt đầu quay (tăng dần), bay thì quay hết tốc lực
     if(r.prop){
       const want = (airborne || r.targetAlt > 0.3 || upKey) ? 1 : (Math.abs(thr) > 0.05 || r.autoDescend ? 0.45 : 0);
@@ -564,7 +603,7 @@
     }
     r.wheels.forEach(w=>{ w.rotation.x += speed*dt/0.38; });
     player.x = x; player.y = z;
-    Scene3D.updateCamera(x, z, r.alt);
+    Scene3D.updateCamera(x, z, r.alt, isPlane ? r.yaw : null);
     r.netT -= dt; if(r.netT <= 0){ r.netT = 0.15; try{ Net.sendMyState({x:x, y:z, action:'sit'}); }catch(e){} }
     r.remain -= dt;
     const mm = Math.max(0, Math.floor(r.remain/60)), ss = Math.max(0, Math.floor(r.remain%60));
@@ -574,7 +613,9 @@
       if(!isPlane || r.alt < 0.6){ dismountVehicle(); return; }
       UI.toast('Hết thời gian thuê. Đang hạ cánh…');
     }
-    if(r.autoDescend && (!isPlane || r.alt < 0.35)){ dismountVehicle(); }
+    if(r.autoDescend && (!isPlane || r.alt < 0.35 ||
+      (r.autoLandAlt!==undefined && Math.hypot(x-r.autoLandX,z-r.autoLandZ)<0.6 && r.alt<=r.autoLandAlt+0.08) ||
+      (roofAlt!==null&&r.alt<=roofAlt+0.08))){ dismountVehicle(); }
   }
   // gắn sự kiện "giữ nút" cho các nút điều khiển xe/máy bay
   (function bindVehicleBtns(){
@@ -707,7 +748,8 @@
         // đặt nhân vật ngồi vào ghế xe (override mọi thứ animation đặt lại); luôn giữ tư thế 'sit'
         const sp = seatWorld(riding);
         playerMesh.position.set(sp.x, sp.y, sp.z);
-        playerMesh.rotation.y = riding.yaw;
+         playerMesh.rotation.order='YXZ';
+         playerMesh.rotation.set(riding.type==='plane'?-riding.pitch:0,riding.yaw,riding.type==='plane'?riding.bank*0.7:0,'YXZ');
         playerMesh.userData.face = riding.yaw;
         playerMesh.userData.moving = false;
         if(playerMesh.userData.action !== 'ride'){ playerMesh.userData.action = 'ride'; playerMesh.userData.actionT = 0; }
