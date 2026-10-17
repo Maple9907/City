@@ -284,3 +284,15 @@ body .action-btn.on{background:#3b6fa0}
 .confirm-card p { font-size:16px; line-height:1.5; margin-bottom:16px; color:#e8e8f0; }
 .confirm-btns { display:flex; gap:10px; }
 .confirm-btns button { flex:1; }
+
+/* ===== Nút câu cá nhanh (đảo câu cá, từ v20) ===== */
+.fish-quick{position:absolute;left:12px;top:46%;transform:translateY(-50%);width:62px;height:62px;border-radius:18px;border:1.5px solid #c8a35a;
+  background:rgba(58,38,18,.88);color:#ffe9b8;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;z-index:12;
+  box-shadow:0 3px 10px rgba(0,0,0,.35);-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+.fish-quick .fq-ic{font-size:26px;line-height:1}
+.fish-quick .fq-lb{font:700 11px sans-serif;margin-top:2px}
+.fish-quick:active{transform:translateY(-50%) scale(.94)}
+.fish-quick.wait{opacity:.75;border-color:#7a8a99;background:rgba(30,45,62,.88)}
+.fish-quick.bite{background:rgba(210,40,40,.95);border-color:#fff;color:#fff;animation:fqPulse .35s infinite alternate}
+@keyframes fqPulse{from{transform:translateY(-50%) scale(1)}to{transform:translateY(-50%) scale(1.14)}}
+.fish-quick.hidden{display:none}

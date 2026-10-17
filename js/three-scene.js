@@ -38,13 +38,9 @@ const Scene3D = (() => {
       {x:-12,z:-8},{x:-6,z:-16},{x:8,z:-14},{x:14,z:-6},{x:-14,z:8},{x:-8,z:14},{x:6,z:16},{x:14,z:10},{x:0,z:-18},{x:18,z:0}
     ], benches:[{x:-8,z:0},{x:8,z:0},{x:0,z:-8},{x:0,z:8}], fountain:{x:0,z:0}, lamps:[{x:-18,z:0},{x:18,z:0},{x:0,z:-18},{x:0,z:18}],
       portal:{x:0,z:29,w:6,d:3,to:'fishing',label:'🚤 Đảo câu cá'}, spawn:{x:0,z:10} },
-    // Đảo câu cá: hình dáng, cây cọ, bến câu... do js/island.js dựng; ở đây chỉ khai báo dữ liệu logic
-    fishing: { size:130, buildings:[
-      { x:Island.HUT.x, z:Island.HUT.z, w:7.6, h:3.4, d:5.6, ry:Island.HUT.ry, type:'fishshop', name:'🐟 Quầy Cá Của Thủy',
-        coll:{ x:Island.HUT.x, z:Island.HUT.z, w:9.4, d:8.7 } },   // hộp va chạm đã tính cả góc xoay của quầy
-    ], trees:Island.PALM_AT.map(p=>({ x:p[0], z:p[1], r:0.55*p[2], noDraw:true })), benches:[], fountain:null, lamps:[],
-      island:true, water:null, docks:Island.fishSpots.concat([Island.PIER_SPOT]),
-      portal:{x:0,z:-18.6,w:6,d:3,to:'plaza',label:'🚤 Về Quảng trường'}, spawn:{x:0,z:-6} }
+    // Đảo câu cá (v20): hình dáng, dừa, chòi, bến chữ T, thuyền... do js/island.js dựng + tính va chạm; ở đây chỉ khai báo dữ liệu logic
+    fishing: { size:60, island:true, buildings:[], trees:[], benches:[], fountain:null, lamps:[],
+      portal:{x:3,z:-30.2,w:3.2,d:1.2,to:'plaza',label:'🚤 Quảng trường'}, spawn:{x:2.6,z:-5} }
   };
 
   ZONES.plaza.name = 'Công viên GCITY'; ZONES.fishing.name = 'Đảo câu cá';
@@ -65,6 +61,9 @@ const Scene3D = (() => {
     benches:[], fountain:{x:0,z:0},
     screen:{x:0, z:-37.5, w:16, h:9, y:1.4}
   });
+  // đèn bổ sung cho ban đêm (v20): quanh sân khấu, vỉa hè ngoài đường vòng, sân cổng tàu, vòng quay, hai bên trường đua
+  // (4 đèn vỉa hè ngoài đặt ở x=±23.3 = giữa dải vỉa hè ngoài của đường vòng vuông của City-main)
+  [[-12.5,-27],[12.5,-27],[-23.3,-16],[23.3,-16],[-23.3,16],[23.3,16],[-8,36],[8,36],[8,46],[23,46],[32,-12],[32,12]].forEach(([lx,lz])=>ZONES.plaza.lamps.push({x:lx,z:lz}));
   [[-7,-7],[7,-7],[-7,7],[7,7]].forEach(([bx,bz])=>ZONES.plaza.benches.push({x:bx, z:bz, ry:Math.atan2(-bx,-bz)}));
   [-9,-4.5,4.5,9].forEach(bx=>ZONES.plaza.benches.push({x:bx, z:-29, ry:Math.PI})); // ghế hàng 1 hướng về màn hình
   [-9,-4.5,4.5,9].forEach(bx=>ZONES.plaza.benches.push({x:bx, z:-26.5, ry:Math.PI})); // ghế hàng 2
@@ -203,7 +202,7 @@ const Scene3D = (() => {
   //   pool     – quầng sáng trên mặt đất (additive): chỉ hiện ban đêm
   //   sea/shallow/foam – mặt nước đảo đổi màu theo đêm
   let nightReg = [];
-  let islandFx = null;
+  let animFns = [];            // hàm chạy mỗi khung (sóng biển, thuyền nhấp nhô…) do zone đăng ký
   let nightDirty = false;      // true khi vừa dựng zone mới → áp lại ngày/đêm cho zone đó
   // ===== NGÀY / ĐÊM THEO GIỜ THIẾT BỊ =====
   // k: 0 = ban ngày, 1 = ban đêm. target lấy từ đồng hồ máy, đổi mượt ~1,2s nên không bị giật.
@@ -225,7 +224,7 @@ const Scene3D = (() => {
   const _tmp = new THREE.Color();
   const mixTo = (target, hexA, hexB, t)=>{ target.setHex(hexA); _tmp.setHex(hexB); return target.lerp(_tmp, t); };
   const lerpHex = (out, dayHex, nightHex, k)=> mixTo(out, dayHex, nightHex, k);
-  const SKY_DAY = 0xbfe9f4, SKY_NIGHT = 0x08122b;   // trời ban ngày / ban đêm (sương mù dùng chung màu này)
+  const SKY_DAY = 0xbfe9f4, SKY_DAY_ISLE = 0xa6dff2, SKY_NIGHT = 0x0b1635;   // trời ban ngày / ban đêm (sương mù dùng chung màu này)
 
   function nightTex(){          // vệt sáng tròn dưới chân đèn (gradient mềm)
     if(nightTex.t) return nightTex.t;
@@ -236,6 +235,34 @@ const Scene3D = (() => {
     g.fillStyle=gr; g.fillRect(0,0,128,128);
     return (nightTex.t = new THREE.CanvasTexture(c));
   }
+  let _glowTex = null;           // đĩa trắng mờ dần ra rìa (nhuộm màu bằng material.color)
+  function glowTex(){
+    if(_glowTex) return _glowTex;
+    const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d'), gr = g.createRadialGradient(64,64,0,64,64,64);
+    gr.addColorStop(0,'rgba(255,255,255,1)'); gr.addColorStop(0.35,'rgba(255,255,255,0.45)'); gr.addColorStop(1,'rgba(255,255,255,0)');
+    g.fillStyle = gr; g.fillRect(0,0,128,128); return (_glowTex = new THREE.CanvasTexture(c));
+  }
+  // Quầng sáng (sprite) quanh nguồn sáng + vệt sáng trên mặt đất (đĩa cộng sáng): chỉ hiện ban đêm, không dùng đèn thật → nhẹ cho điện thoại
+  function addGlow(x,y,z,color,size){
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map:glowTex(), color, transparent:true, opacity:0, blending:THREE.AdditiveBlending, depthWrite:false }));
+    s.position.set(x,y,z); s.scale.set(size,size,1); s.visible = false; worldGroup.add(s); nightReg.push({ o:s, mode:'fade', op:0.9 }); return s;
+  }
+  function addPool(x,z,r,color,op,y){
+    const m = new THREE.Mesh(new THREE.CircleGeometry(r,32), new THREE.MeshBasicMaterial({ map:glowTex(), color, transparent:true, opacity:0, blending:THREE.AdditiveBlending, depthWrite:false, polygonOffset:true, polygonOffsetFactor:-2, polygonOffsetUnits:-2 }));
+    m.rotation.x = -Math.PI/2; m.position.set(x, y||0.19, z); m.visible = false; worldGroup.add(m); nightReg.push({ o:m, mode:'fade', op }); return m;
+  }
+  // đèn lồng đường cho đảo (s = tỉ lệ, baseY = độ cao chân đèn: 0.3 trên bến gỗ)
+  function addIslandLamp(x,z,s,baseY){
+    s = s || 1; baseY = baseY || 0;
+    const lamp = new THREE.Group(), dk = new THREE.MeshLambertMaterial({color:0x2f4a3a});
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.14,3.6,6), dk); pole.position.y = 1.8; lamp.add(pole);
+    const bulb = new THREE.Mesh(new THREE.BoxGeometry(0.7,0.8,0.7), new THREE.MeshBasicMaterial({color:0xffe9b8})); bulb.position.y = 4.0; lamp.add(bulb);
+    const cap = new THREE.Mesh(new THREE.ConeGeometry(0.6,0.4,4), dk); cap.position.y = 4.6; cap.rotation.y = Math.PI/4; lamp.add(cap);
+    lamp.scale.setScalar(s); lamp.position.set(x, baseY, z); worldGroup.add(lamp);
+    nightReg.push({ o:bulb, mode:'basic', dim:0.22 });
+    addGlow(x, baseY + 4.0*s, z, 0xffd27a, 3.6*s);
+    addPool(x, z, 4.8*s, 0xffe6b0, 0.5, baseY + 0.19);
+  }
   // Quầng sáng dưới chân đèn (additive) + quầng sáng nhỏ quanh bóng đèn
   function addLightPool(x, z, y, r){
     const p=new THREE.Mesh(new THREE.PlaneGeometry(r*2, r*2), new THREE.MeshBasicMaterial({ map:nightTex(), transparent:true, opacity:0, blending:THREE.AdditiveBlending, depthWrite:false }));
@@ -245,9 +272,13 @@ const Scene3D = (() => {
     halo.position.set(x, y, z); halo.scale.set(4.2,4.2,1); worldGroup.add(halo);
     nightReg.push({ o:halo, mode:'halo' });
   }
-  function applyNightFountain(fx){            // nước + vàng của đài phun sáng lên ban đêm
-    (fx.glow||[]).forEach(m=>{ if(m && m.emissive) nightReg.push({ o:fx.group, mode:'emissiveMat', mat:m }); });
+  function applyNightFountain(fx, x, z){      // đài phun sáng xanh ngọc về đêm: nước + vàng phát sáng, quầng sáng trên nền, hào quang trên đỉnh
+    const [water, gold] = fx.glow;
+    nightReg.push({ o:fx.group, mode:'emit', mat:water, day:0x000000, night:0x16618c });
+    nightReg.push({ o:fx.group, mode:'emit', mat:gold, day:0x3d2a05, night:0x7a5710 });
+    addPool(x, z, 9.5, 0x59c9ff, 0.55, 0.2); addGlow(x, 3.6, z, 0x7fd6ff, 7);
   }
+
   // Sao + trăng (chỉ hiện ban đêm)
   function buildSky(){
     const n=340, pos=new Float32Array(n*3);
@@ -277,18 +308,18 @@ const Scene3D = (() => {
     if(!scene) return;
     DN.k = k;
     // trời + sương mù
-    mixTo(scene.background, SKY_DAY, SKY_NIGHT, k);
+    mixTo(scene.background, curZoneId==='fishing' ? SKY_DAY_ISLE : SKY_DAY, SKY_NIGHT, k);   // biển ban ngày xanh hơn quảng trường một chút
     if(scene.fog) scene.fog.color.copy(scene.background);
     // ánh sáng
-    mixTo(hemi.color, 0xeaf6ff, 0x2b3f7a, k);
-    mixTo(hemi.groundColor, 0xcfb894, 0x0d1626, k);
-    hemi.intensity = 0.30 - 0.06*k;
-    mixTo(ambient.color, 0xffffff, 0x5a6ea8, k);
-    ambient.intensity = 0.32 + 0.06*k;
+    mixTo(hemi.color, 0xeaf6ff, 0x7a8fd8, k);
+    mixTo(hemi.groundColor, 0xcfb894, 0x25345f, k);
+    hemi.intensity = 0.30 - 0.03*k;
+    mixTo(ambient.color, 0xffffff, 0x7d90d6, k);
+    ambient.intensity = 0.32 - 0.11*k;
     // mặt trời: ban ngày trắng ấm → hồng cam lúc thấp (bình minh / hoàng hôn) → xanh lam khi đêm
     mixTo(sun.color, 0xfff1d6, 0xffb069, DN.warm*(1-k));
-    sun.color.lerp(_tmp.setHex(0xa8c4ff), k);
-    sun.intensity = 0.52 - 0.22*k;
+    sun.color.lerp(_tmp.setHex(0xa4b8f5), k);
+    sun.intensity = 0.52 - 0.30*k;
     sun.position.copy(sunDir).lerp(moonDir, k);
     // sao + trăng
     if(stars){ stars.material.opacity = k*0.95; stars.visible = k>0.02; }
@@ -309,6 +340,9 @@ const Scene3D = (() => {
       else if(it.mode==='pool'||it.mode==='halo'){
         o.material.opacity = (it.mode==='pool' ? 0.58 : 0.42) * k;
       }
+      else if(it.mode==='fade'){ o.visible = k>0.015; o.material.opacity = it.op*k; }                       // quầng/vệt sáng cộng sáng: chỉ hiện ban đêm
+      else if(it.mode==='tint'){ it.mat.color.setHex(0xffffff).lerp(_tmp.setHex(it.night), k); }              // mặt biển/vùng nước nông tối đi về đêm
+      else if(it.mode==='emit'){ it.mat.emissive.setHex(it.day).lerp(_tmp.setHex(it.night), k); }             // phát sáng có màu đích (đài phun)
       else if(it.mode==='sea'){ lerpHex(o.material.color, 0x11697c, 0x07253c, k); }
       else if(it.mode==='shallow'){ lerpHex(o.material.color, 0x2a9aab, 0x0d3a52, k); }
       else if(it.mode==='foam'){ o.material.opacity = 0.55 - 0.28*k; }
@@ -482,6 +516,7 @@ const Scene3D = (() => {
     flat(30,12.5,0,0.02,-36.25,L({map:tileTex('#f2dcb5','#e6cfa2',12,5)}));
     for(let s=0;s<3;s++){ bx(5,0.15*(3-s),1.0,0,0.075*(3-s),-31.0+s*1.0,wood); }
     [-10.5,10.5].forEach(sx=>bx(1.1,2.4,1,sx,1.5,-36,L(0x1b1f27)));
+    [-6,6].forEach(sx=>addPool(sx,-34.2,7.5,0xffb868,0.45,0.53));   // đèn sân khấu (chỉ ban đêm)
     (ZONES.plaza.flowers||[]).forEach(f=>{ bx(3,0.5,1.2,f.x,0.3,f.z,L(0xe6d3b0));
       for(let i=-1;i<=1;i++) for(let j=0;j<2;j++){ const fl=new THREE.Mesh(new THREE.SphereGeometry(0.22,6,5),L(i%2?0xf06a8d:0xff8fa8)); fl.position.set(f.x+i*0.9,0.65,f.z+(j-0.5)*0.5); worldGroup.add(fl); } });
     for(let i=0;i<22;i++){ const a=i/22*Math.PI*2+Math.sin(i*3)*0.1, r=46+Math.sin(i*5)*4; const tx=Math.cos(a)*r, tz=Math.sin(a)*r; if((tx>33&&Math.abs(tz)<21)||(tx<-33&&tz>-15&&tz<19)||(tz>29&&tx>-27&&tx<28)||(tx<-30&&Math.abs(tz)<14)||(tx>30&&Math.abs(tz)<4)) continue; makeTree(tx, (Math.abs(tx)<17&&tz>-44.2&&tz<-29)?-44.6:tz, 1.5+Math.abs(Math.sin(i*7))*0.8, false); }   // cây vành đai lùi ra sau nền gạch sân khấu (không đứng vắt ngang mép gạch)
@@ -540,21 +575,12 @@ const Scene3D = (() => {
     [[-14,50.8,1.6],[-5,52.3,1.5],[5,52.3,1.7],[14,50.8,1.5]].forEach(([tx,tz,sc])=>makeTree(tx,tz,sc,false));
   }
 
-  // ===== ĐẢO CÂU CÁ: toàn bộ dựng trong js/island.js (cát + cỏ + cọ + quầy cá + cầu gỗ + tàu + đảo nhỏ) =====
+  // ===== ĐẢO CÂU CÁ (v20): toàn bộ dựng trong js/island.js (đảo bầu dục + dừa + chòi + dù + bến chữ T + thuyền + đảo con) =====
+  // env: những hàm dùng chung của three-scene.js mà island.js cần (batch gộp mesh, chữ, quầng sáng ban đêm, mặt nước, hoạt ảnh mỗi khung)
   function buildIsland(){
-    islandFx = Island.create({ lampPool:(x,z,y)=>addLightPool(x, z, y, 7.5) });
-    worldGroup.add(islandFx.group);
-    islandFx.night.forEach(n=>nightReg.push(n));
-    // bảng "Đảo câu cá" trên cổng gỗ
-    const sign = makeTextSprite('🏝 Đảo câu cá', {fontsize:30, color:'#fff8e0', bg:'rgba(40,26,14,.92)'});
-    sign.position.set(0, 3.6, -19.6); sign.scale.set(0.72*sign.userData.ar, 0.72, 1);
-    sign.userData.sprite = true; worldGroup.add(sign);
-    // bảng chỉ đường ở bến câu
-    const sign2 = makeTextSprite('🎣 Bến câu', {fontsize:26, color:'#eaf7ff', bg:'rgba(20,60,80,.88)'});
-    sign2.position.set(-9.5, 3.2, 9.5); sign2.scale.set(0.6*sign2.userData.ar, 0.6, 1); worldGroup.add(sign2);
-    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.12,3.2,6), new THREE.MeshLambertMaterial({color:0x6f4522}));
-    post.position.set(-9.5, 1.6, 9.62); post.castShadow = true; worldGroup.add(post);
-    addLightPool(Island.HUT.x + Math.sin(Island.HUT.ry)*3.4, Island.HUT.z + Math.cos(Island.HUT.ry)*3.4, 2.2, 8.0);   // ánh đèn trong quầy cá
+    const waterMats = { push: m => nightReg.push({ o:worldGroup, mode:'tint', mat:m, night:0x5a74a6 }) };   // biển + vùng nước nông tối đi về đêm
+    Island.build({ group:worldGroup, Batch, GlowBatch, blobs:_blobs, aniso:maxAniso(), makeTextPlane,
+      addLamp:addIslandLamp, addGlow, addPool, reg:it=>{ nightReg.push(it); return it.o; }, waterMats, anim:animFns });
   }
 
   // Đường đua hình sân vận động (2 đoạn thẳng + 2 nửa vòng), mọi làn chạy cùng "tiến độ" u nên luôn thẳng hàng ngang nhau
@@ -696,7 +722,7 @@ const Scene3D = (() => {
     curZoneId = zoneId;
     const z = ZONES[zoneId];
     waterMesh = null; fountainFx = null; screenInfo = null; screenCanvas = null; spinners = []; ferris = null; racers = []; raceCanvas = null;
-    islandFx = null; nightReg = [];      // đăng ký lại toàn bộ hiệu ứng ban đêm của zone vừa dựng
+    animFns = []; nightReg = [];         // đăng ký lại toàn bộ hiệu ứng ban đêm + hoạt ảnh của zone vừa dựng
     nightDirty = true;                   // dựng xong sẽ áp lại trạng thái trời cho mọi vật thể của zone
 
     // ground
@@ -706,7 +732,7 @@ const Scene3D = (() => {
     );
     ground.rotation.x = -Math.PI/2; ground.receiveShadow = true;
     if(zoneId==='plaza') buildPlazaFloor();
-    else if(z.island) buildIsland();      // đảo câu cá dựng riêng trong js/island.js
+    else if(z.island) buildIsland();      // đảo câu cá (v20) dựng riêng trong js/island.js
     else worldGroup.add(ground);
 
     // plaza paths (cross)
@@ -750,7 +776,7 @@ const Scene3D = (() => {
       fountainFx = Fountain.create();
       fountainFx.group.position.set(z.fountain.x, 0.14, z.fountain.z);
       worldGroup.add(fountainFx.group);
-      applyNightFountain(fountainFx);                      // nước + hồ phát sáng xanh ban đêm
+      applyNightFountain(fountainFx, z.fountain.x, z.fountain.z);                      // nước + hồ phát sáng xanh ban đêm
     }
 
     // nước (chỉ zone dùng mặt nước phẳng; đảo câu cá tự dựng trong js/island.js)
@@ -769,7 +795,7 @@ const Scene3D = (() => {
     if(z.portal){
       const p = z.portal;
       const ring = new THREE.Mesh(new THREE.BoxGeometry(p.w, 0.1, p.d), new THREE.MeshBasicMaterial({color:0xffd700, transparent:true, opacity:0.5}));
-      ring.position.set(p.x, zoneId==='plaza'?0.2:0.1, p.z); worldGroup.add(ring);
+      ring.position.set(p.x, zoneId==='plaza'?0.2:(zoneId==='fishing'?0.34:0.1), p.z); worldGroup.add(ring);
       const sign = makeTextSprite(p.label, {fontsize:28, color:'#fff', bg:'rgba(255,180,0,.8)'});
       sign.position.set(p.x, 3, p.z); sign.scale.set(0.8*sign.userData.ar, 0.8, 1); worldGroup.add(sign);
     }
@@ -877,7 +903,7 @@ const Scene3D = (() => {
   // ===== ANIMATION (đi/chạy/ngồi/vẫy/nhảy/7 điệu nhảy + thở, chớp mắt, tóc đung đưa) =====
   // Độ cao mặt đất tại (x,z): sân khấu (sàn gỗ 22×7, cao 0.5, tâm (0,-35)) + 3 bậc thang trước sân khấu (rộng 5, mỗi bậc sâu 1: 0.45 / 0.30 / 0.15)
   function groundY(zoneId, x, z){
-    if(zoneId==='fishing') return Island.dockY(x, z);      // đứng trên cầu gỗ thì lên cao 0.62
+    if(zoneId==='fishing') return Island.groundY(x, z);    // ván bến gỗ cao 0.3, cát 0.04
     if(zoneId!=='plaza') return 0;
     if(Math.abs(x)<11 && z>-38.5 && z<-31.5) return 0.5;
     if(Math.abs(x)<2.5){ if(z>=-31.5 && z<-30.5) return 0.45; if(z>=-30.5 && z<-29.5) return 0.30; if(z>=-29.5 && z<-28.5) return 0.15; }
@@ -916,14 +942,8 @@ const Scene3D = (() => {
   function getZone(zoneId){ return ZONES[zoneId]; }
   function collides(zoneId, x, zpos, r=0.8, skipFurn){
     const z = ZONES[zoneId];
-    // Đảo câu cá: ra khỏi mép cát/cỏ là rơi xuống nước. Cầu gỗ được nới thêm bán kính nhân vật
-    // để đứng được tới mép lan can, còn trên cát thì phải còn chỗ cho cả người.
-    if(z.island){
-      const ok = (px,pz)=> Island.walkable(px,pz) || Island.onPier(px,pz,r);
-      if(!ok(x, zpos)) return true;
-      for(const b of z.buildings){ const cb=b.coll||b; if(Math.abs(x-cb.x)<cb.w/2+r && Math.abs(zpos-cb.z)<cb.d/2+r) return true; }
-      return false;
-    }
+    // Đảo câu cá (v20): ra khỏi mép cát/bến là rơi xuống nước; chòi, dừa, đèn, dù, đá, bụi là vật cản (Island.collides)
+    if(z.island) return Island.collides(x, zpos, r);
     if(Math.abs(x)>z.size/2-r || Math.abs(zpos)>z.size/2-r) return true;
     for(const b of z.buildings){
       if(Math.abs(x-b.x)<b.w/2+r && Math.abs(zpos-b.z)<b.d/2+r) return true;
@@ -962,12 +982,9 @@ const Scene3D = (() => {
     }
     return null;
   }
-  function atDock(zoneId, x, z){
-    const z_ = ZONES[zoneId];
-    if(zoneId!=='fishing' || !z_.docks) return false;
-    for(const d of z_.docks){ if(Math.hypot(x-d.x, z-d.z)<2.6) return true; }
-    return false;
-  }
+  // câu cá được khi đứng trên bến gỗ hoặc sát mép nước (v20)
+  function atDock(zoneId, x, z){ return zoneId==='fishing' && Island.atDock(x, z); }
+  function fishDir(x, z){ return Island.fishDir(x, z); }   // góc quay mặt (rad) về phía mặt nước gần nhất, tự tránh hướng có đất / ván bến
 
   // ===== CÔNG VIÊN: điểm tương tác + màn hình =====
   function nearSpot(zoneId, x, z){
@@ -1064,7 +1081,7 @@ const Scene3D = (() => {
     spinners.forEach(m=>{ m.rotation.y = time*1.5; });
     if(ferris){ ferris.rot.rotation.z = time*0.2; ferris.gond.forEach(g=>g.rotation.z = -time*0.2); }
     if(fountainFx) fountainFx.update(time);
-    if(islandFx) islandFx.update(time);
+    for(let i=0;i<animFns.length;i++) animFns[i](time);      // sóng biển, thuyền nhấp nhô…
     // ===== ngày / đêm: giờ máy quyết định, đổi mượt ~1,2s (đổi tức thời thì mắt khó chịu) =====
     syncClock();
     if(nightDirty){ nightDirty = false; applyNight(DN.k); }     // zone vừa dựng cần nhận trạng thái trời hiện tại
@@ -1094,9 +1111,8 @@ const Scene3D = (() => {
     // vòng đu quay
     ferrisSeat, ferrisYaw, nearFerris, pickFerris, ferrisBoardSpot, get ferrisCabins(){ return ferris ? ferris.gond.length : 0; },
     // đảo câu cá
-    getIsland: ()=> islandFx,
-    fishSpots: ()=> Island.fishSpots.concat([Island.PIER_SPOT]),
     atFishSpot: (x,z)=> atDock('fishing', x, z),
+    fishDir,
     // camera (tiện cho test / chỉnh map)
     setCam: (d, p, a)=>{ if(d) setCamDist(d); if(p!==undefined) camPitch = camClamp(p, CAM.minPitch, CAM.maxPitch); if(a!==undefined) camAngle = a; camSnap = true; },
     camState: ()=>({ dist:camDist, pitch:camPitch, angle:camAngle }),

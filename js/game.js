@@ -130,19 +130,10 @@
       ['🃏 Mèo Lật Bài','female',0,-9.2,0,Math.PI/2,'Lật cặp giống nhau, thắng xu liền tay! 🃏','memory'],
       ['🎟 Chú Ba Quay Số','male',0,3,13.4,Math.atan2(-3,-13.4),'Chọn số may mắn đi con, 10 lượt quay liền! 🎟','lo'],
       ['📺 Anh Chiếu Màn','male',3,12.5,-29.5,0,'Dán link YouTube, lên màn hình lớn liền! 📺','tv'],
-      ['🎣 Bà Tám Bến Câu','female',3,0,41.1,0,'Ra bến quăng cần đi, nhớ mua mồi nha! 🎣','fish','fishing',1],
+      ['🎣 Bà Tám Bến Câu','female',3,-10.8,-8.7,0,'Ra bến quăng cần đi, nhớ mua mồi nha! 🎣','fish','fishing'],   // đứng sau quầy chòi câu cá
+      ['🎣 Chú Tư Câu Cá','male',5,-1.4,-29.4,Math.PI,'Hôm nay cá cắn câu dữ lắm! 🐟',null,'fishing',1],            // 2 ngư phủ đứng câu ở đầu bến
+      ['🎣 Cô Hai Ra Khơi','female',1,7.4,-29.4,Math.PI,'Suỵt, đừng làm cá sợ nha! 🤫',null,'fishing',1],
     ];
-    // các ngư phủ đứng câu quanh đảo — vị trí + hướng ra biển lấy thẳng từ Island.fishSpots
-    [
-      ['🎣 Chú Bảy Hải','male',4,'Hôm nay biển lặng, cá cắn đều lắm! 🐟'],
-      ['🎣 Cô Mười','female',2,'Hôm nay cá cắn nhiều lắm, cô câu được cả giỏ rồi! 🐟'],
-      ['🎣 Bác Sáu','male',1,'Câu cá phải kiên nhẫn thì mới được cá to đó! 💧'],
-      ['🎣 Chú Tư','male',5,'Cá tươi thế này, về làm sashimi thì ngon hết sảy! 🍣'],
-    ].forEach(([nm, gd, ci, ln], k)=>{
-      const sp = Island.fishSpots[k % Island.fishSpots.length];
-      const off = 1.15 * (k % 2 ? 1 : -1);   // lệch sang bên cho khỏi đứng chồng lên thùng chài
-      npcRaw.push([nm, gd, ci, sp.x + Math.cos(sp.face + Math.PI/2)*off, sp.z + Math.sin(sp.face + Math.PI/2)*off, sp.face, ln, null, 'fishing', 1]);
-    });
     npcs = npcRaw.map(([name,g,c,x,z,f,line,act,zone,angler])=>{
       const m = Scene3D.createCharacter(g, c, name, false);
       m.position.set(x, 0, z); m.userData.face = f;
@@ -166,12 +157,13 @@
 
     UI.initPanels({
       onChatSend: text=> Net.sendChat(text),
-      onEmote: id=>{ Player.doAction(player, id); playerMesh.userData.action = player.action; playerMesh.userData.actionT = 0; },
+      onEmote: id=>{ if(fishing) cancelFishing(); Player.doAction(player, id); playerMesh.userData.action = player.action; playerMesh.userData.actionT = 0; },
       onAction: handleAction,
       getPlayer: ()=> player,
       refreshPlayers: ()=> UI.renderPlayers(Net.getPlayers()),
     });
     UI.initJoystick(j=> input.joy = j);
+    if($('fishQuick')) $('fishQuick').onclick = fishQuickTap;
     function openCharSwitch(){
       if(riding){ UI.toast('Hãy xuống xe trước khi đổi nhân vật!'); return; }
       UI.openCharSwitch(curChar, ({ name, gender:gd, charIndex:ci })=>{
@@ -240,11 +232,13 @@
   function handleAction(type, data){
     if(type==='fishCast'){
       if(currentZone!=='fishing' || !Scene3D.atDock('fishing', playerMesh.position.x, playerMesh.position.z)){
-        UI.toast('Hãy đến bến câu cá ở đảo câu cá!'); return;
+        UI.toast('Hãy ra bến gỗ hoặc đứng sát mép nước ở đảo câu cá!'); return;
       }
-      const st = Fishing.getState();
-      if(st.state==='biting' || st.state==='waiting'){ Fishing.reel(player, onFishEvent); return; }
-      Fishing.cast(player, onFishEvent);
+      const st = Fishing.getState().state;
+      if(st==='biting' || st==='waiting'){ Fishing.reel(player, onFishEvent); return; }
+      if(st!=='idle') return;                       // đang quăng / đang nhận cá: bỏ qua
+      beginFishPose();                              // quay mặt ra nước + cầm cần
+      if(!Fishing.cast(player, onFishEvent)) endFishPose();   // hết mồi → bỏ tư thế
     }
     else if(type==='fishSell'){ const r=Fishing.sellAll(player); if(r.count>0) UI.toast(`Bán ${r.count} cá +${r.money} xu!`); else UI.toast('Chưa có cá.'); UI.updateHUD(player); }
     else if(type==='buyBait'){
@@ -273,7 +267,39 @@
     }
     else if(type==='buyRod'){ if(player.coins<100){UI.toast(UI.NO_COIN);return;} if(player.inventory.rod>=2){UI.toast('Đã có cần cao cấp!');return;} player.coins-=100; player.inventory.rod=2; UI.toast('🎣 Cần nâng cấp!'); UI.updateHUD(player); }
   }
+  // ===== Tư thế câu cá của người chơi (v20): chỉ cầm cần sau khi bấm quăng; đi hoặc bấm emote là thôi câu (mồi đã quăng coi như mất) =====
+  const FISH_ACTS = ['fish','cast','bite','reel'];
+  let fishing = false;
+  function beginFishPose(){
+    const ud = playerMesh.userData;
+    ud.face = Scene3D.fishDir(playerMesh.position.x, playerMesh.position.z);   // tự quay mặt ra phía nước
+    ud.action = 'fish'; ud.actionT = 0; ud.moving = false;
+    player.action = 'fish'; walkTo = null; fishing = true;
+    try{ Net.sendMyState({ x:player.x, y:player.y, action:'fish' }); }catch(e){}
+  }
+  function endFishPose(){
+    fishing = false;
+    const ud = playerMesh.userData;
+    if(FISH_ACTS.indexOf(ud.action) >= 0){ ud.action = null; player.action = null; try{ Net.sendMyState({ x:player.x, y:player.y, action:null }); }catch(e){} }
+  }
+  function cancelFishing(){ Fishing.reset(); resetFishBtn(); endFishPose(); }
+  // Nút 🎣 nổi bên trái (chỉ hiện ở đảo câu cá): chạm để quăng; khi cá cắn (đỏ, nhấp nháy "KÉO!") chạm để kéo
+  let _fq = '';
+  function refreshFishQuick(){
+    const b = $('fishQuick'); if(!b) return;
+    const on = currentZone==='fishing' && !riding, st = Fishing.getState().state;
+    const key = on + st; if(key===_fq) return; _fq = key;
+    b.classList.toggle('hidden', !on);
+    b.classList.toggle('bite', st==='biting'); b.classList.toggle('wait', st==='waiting' || st==='casting');
+    b.innerHTML = '<span class="fq-ic">🎣</span><span class="fq-lb">' + (st==='biting' ? 'KÉO!' : (st==='waiting' || st==='casting' ? 'Chờ…' : 'Quăng')) + '</span>';
+  }
+  function fishQuickTap(){
+    if(currentZone!=='fishing' || riding) return;
+    if(Fishing.getState().state==='waiting'){ UI.toast('Chờ cá cắn câu… 🎣'); return; }   // kéo sớm là cá chạy mất → chặn (chỉ nút nổi; bảng ở NPC giữ logic cũ)
+    handleAction('fishCast');
+  }
   function onFishEvent(ev){
+    if(ev.type==='casting') UI.closePanel('fishPanel');   // đóng bảng để thấy nhân vật quăng cần
     const b = $('fishCastBtn');
     if(ev.type==='error') UI.toast(ev.msg);
     else if(ev.type==='casting'){ UI.toast('Đã quăng cần, chờ cá cắn…'); b.textContent='Kéo cần!'; }
@@ -538,6 +564,7 @@
       moving = (mx!==0 || mz!==0);
       playerMesh.userData.moving = moving;
       if(moving && playerMesh.userData.action==='sit'){ playerMesh.userData.action = null; player.action = null; } // đi là tự đứng dậy
+      if(moving && fishing) cancelFishing();   // đi là thôi câu (mồi đã quăng coi như mất)
 
       if(moving && playerMesh.userData.action!=='sit'){
         const dir = Scene3D.getMoveDir();
@@ -581,25 +608,20 @@
       if(speedBoost>0) speedBoost-=dt;
 
       // action timer (auto-clear non-sit)
-      if(playerMesh.userData.action && playerMesh.userData.action!=='sit'){
+      if(playerMesh.userData.action && playerMesh.userData.action!=='sit' && FISH_ACTS.indexOf(playerMesh.userData.action)<0){
         const dur = playerMesh.userData.action==='jump'?0.8 : (playerMesh.userData.action==='wave'?2.5 : (playerMesh.userData.action==='cry'?3 : (playerMesh.userData.action==='holla'?2 : 4)));
         if(playerMesh.userData.actionT > dur){ playerMesh.userData.action=null; player.action=null; }
       }
 
-      // ===== tư thế câu cá: đứng đúng chỗ câu thì tự động cầm cần, đến mỏi thì giật tay =====
-      if(currentZone==='fishing' && !riding && ferrisRide < 0){
+      // ===== tư thế câu cá (v20): chỉ khi đã bấm quăng; theo trạng thái của Fishing: quăng · chờ · cá cắn · kéo =====
+      if(fishing){
         const ud2 = playerMesh.userData;
-        const near = Scene3D.atFishSpot(playerMesh.position.x, playerMesh.position.z);
-        if(near && ud2.action!=='sit'){
+        if(currentZone!=='fishing' || riding || ferrisRide >= 0 || ud2.action==='sit') endFishPose();
+        else {
           const fs2 = Fishing.getState().state;
           const pose = fs2==='casting' ? 'cast' : fs2==='biting' ? 'bite' : fs2==='caught' ? 'reel' : 'fish';
           if(ud2.action !== pose){ ud2.action = pose; ud2.actionT = 0; }
-          if(!moving){   // đứng yên thì quay mặt ra phía biển cho đúng tư thế
-            const sp2 = Island.fishSpots.reduce((a,b)=> Math.hypot(b.x-playerMesh.position.x,b.z-playerMesh.position.z) < Math.hypot(a.x-playerMesh.position.x,a.z-playerMesh.position.z) ? b : a);
-            const cur = ud2.face||0, tg = sp2.face;
-            ud2.face = cur + Math.atan2(Math.sin(tg-cur), Math.cos(tg-cur)) * Math.min(1, dt*3);
-          }
-        } else if(ud2.action==='fish'||ud2.action==='bite'||ud2.action==='cast'||ud2.action==='reel'){ ud2.action = null; }
+        }
       }
       // update animations
       Scene3D.updateCharacter(playerMesh, dt, time);
@@ -652,14 +674,17 @@
       // zone portal (bỏ qua khi đang lái xe / bay)
       const portal = Scene3D.atPortal(currentZone, playerMesh.position.x, playerMesh.position.z);
       if(portal && !riding && ferrisRide < 0){
+        if(fishing) cancelFishing();
+        const fromZone = currentZone;
         currentZone = portal.to; walkTo = null;
         Scene3D.buildZone(currentZone);
         // re-add player + others
         Scene3D.scene.add(playerMesh);
         player.zone = currentZone;
         Object.values(otherMeshes).forEach(m=>{ Scene3D.scene.add(m); m.visible = (currentZone==='plaza'); });
-        const sp = Scene3D.getZone(currentZone).spawn;
+        const sp = (currentZone==='plaza' && fromZone==='fishing') ? { x:0, z:32 } : Scene3D.getZone(currentZone).spawn;   // về từ đảo: đứng trước cổng tàu (không phải giữa sân)
         playerMesh.position.set(sp.x, 0, sp.z);
+        player.x = sp.x; player.y = sp.z;
         UI.toast(`Đến ${Scene3D.getZone(currentZone).name}`);
         UI.updateHUD(player);
       }
@@ -689,6 +714,7 @@
              ferrisRide >= 0 ? playerMesh.position.y - 0.6 : (playerMesh.userData.gy||0));   // lên cabin thì camera bám theo độ cao
       Park.update(currentZone);
       Fishing.update(dt, player, onFishEvent);
+      refreshFishQuick();
       UI.updateHUD(player);
     }
 
