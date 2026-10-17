@@ -1,10 +1,7 @@
-/* ===== KHOÁ YOUTUBE — FILE NÀY KHÔNG CHỨA KEY THẬT =====
- * Nội dung bên dưới chỉ là giá trị rỗng trong repo.
- * Khi deploy, GitHub Actions sẽ GHI ĐÈ file này bằng key thật lấy từ
- * Secret của repo (YT_KEYS) — mỗi dòng 1 key.
- * Nếu mở bản deploy mà thấy `window.GCITY_KEYS = []` thì là bản local,
- * hoặc workflow chưa chạy / chưa cấu hình secret.
- * → Chi tiết cách cấu hình: README, mục "Khoá YouTube Data API".
+/* ===== KHOÁ YOUTUBE (Data API v3) — nhét thẳng vào đây, không dùng GitHub Actions nữa =====
+ * Thêm key: thêm 1 chuỗi vào mảng. Game tự xoay vòng giữa các key, key nào hết quota thì bỏ qua.
  */
-// Nếu trang đã có sẵn danh sách key (vd: bạn tự gán trước khi nạp) thì giữ nguyên, không xoá.
-if(!Array.isArray(window.GCITY_KEYS)) window.GCITY_KEYS = [];
+window.GCITY_KEYS = [
+  "AIzaSyC-WpmofuFqCZB12C2B8fKOL_85qfLJTSg",
+  "AIzaSyCcGm4Avqgl-o9wnsta5PQPrcnMyd3Y7GQ"
+];
