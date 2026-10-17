@@ -123,7 +123,6 @@
     const npcRaw = [
       ['🎟 Út Đua Thú','female',1,31.9,-1.5,-Math.PI/2,'7 bạn thú ra sân! Chọn con nào về nhất, thưởng ×6 nè! 🐎','race'],
       ['🚗 Tài Xế Chớp Nhoáng','male',2,-36.2,5.1,-Math.PI/2,'Xe hay máy bay? Chọn xe rồi lên ngồi luôn! ✈','rental'],
-      ['🎣 Sáu Cần Câu','female',2,-22.5,9.5,Math.PI/2,'Cá cắn câu rồi kìa, mua mồi đi bạn! 🎣','fish'],
       ['🎰 Bảy Vé Số','male',1,23.5,-22.5,0,'Số đẹp đây, thử vận may nào! 🍀','lottery'],
       ['🍕 Chị Pizza Nóng','female',4,22.5,-8,-Math.PI/2,'Pizza ra lò, vừa thổi vừa ăn nè! 🍕'],
       ['🛒 Tú Tạp Hóa','male',5,-20.5,-22.5,0,'Tạp hóa Sunny, cần gì cũng có! 🛒'],
@@ -131,8 +130,6 @@
       ['🎟 Chú Ba Quay Số','male',0,3,13.4,Math.atan2(-3,-13.4),'Chọn số may mắn đi con, 10 lượt quay liền! 🎟','lo'],
       ['📺 Anh Chiếu Màn','male',3,12.5,-29.5,0,'Dán link YouTube, lên màn hình lớn liền! 📺','tv'],
       ['🎣 Bà Tám Bến Câu','female',3,-10.8,-8.7,0,'Ra bến quăng cần đi, nhớ mua mồi nha! 🎣','fish','fishing'],   // đứng sau quầy chòi câu cá
-      ['🎣 Chú Tư Câu Cá','male',5,-1.4,-29.4,Math.PI,'Hôm nay cá cắn câu dữ lắm! 🐟',null,'fishing',1],            // 2 ngư phủ đứng câu ở đầu bến
-      ['🎣 Cô Hai Ra Khơi','female',1,7.4,-29.4,Math.PI,'Suỵt, đừng làm cá sợ nha! 🤫',null,'fishing',1],
     ];
     npcs = npcRaw.map(([name,g,c,x,z,f,line,act,zone,angler])=>{
       const m = Scene3D.createCharacter(g, c, name, false);
@@ -627,6 +624,7 @@
       Scene3D.updateCharacter(playerMesh, dt, time);
       if(ferrisRide >= 0){
         // đặt nhân vật vào cabin SAU khi update (vì GChar.update tự ghi position.y mỗi khung)
+        Scene3D.ferrisSync(time);                       // đồng bộ góc quay vòng với đúng thời điểm khung hình này (cùng `time` với render) trước khi lấy vị trí ghế
         const seat = Scene3D.ferrisSeat(ferrisRide, _fseat);
         if(seat){
           playerMesh.position.copy(seat);

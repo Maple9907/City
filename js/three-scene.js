@@ -23,6 +23,8 @@ const Scene3D = (() => {
   let waterMesh = null, fountainFx = null;
   let screenInfo = null, screenCanvas = null, screenTex = null, spinners = [];
   let ferris = null, racers = [], raceCanvas = null, raceTex = null;
+  const FERRIS_SPEED = 0.2;                                          // rad/giây
+  const FERRIS_CAB = { floor:-2.62, seat:{ x:0, y:-2.90, z:0.10 }, yaw:Math.PI };  // mặt sàn cabin + gốc chân nhân vật khi ngồi (toạ độ cục bộ so với chốt treo)
   let lotSlots = [], lotTaken = {}, lotBadge = null, lotBadgeOn = true;   // bãi thuê xe: 4 xe + 2 máy bay (lotTaken giữ trạng thái khi dựng lại zone)
 
   // Dữ liệu nhân vật (7 nam + 6 nữ) nằm trong js/character.js
@@ -47,7 +49,7 @@ const Scene3D = (() => {
   const H = Math.PI/2, P2 = a=>a.map(([x,z])=>({x,z}));
   const Bd = (x,z,w,d,h,ry,color,roof,type,name)=>({x,z,w,d,h,ry,color,roof,type,name});
   Object.assign(ZONES.plaza, {
-    size:104, race:{x:42.4,z:0,rin:1.7,rout:8,hs:9.6,ro:8.6,lanes:7}, rentLot:{x:-42,z:3}, wheel:{x:15.5,z:42,r:3}, spawn:{x:0,z:9}, portal:{x:0,z:37,w:6,d:3,to:'fishing',label:'🚤 Đảo câu cá'},
+    size:104, race:{x:42.4,z:0,rin:1.7,rout:8,hs:9.6,ro:8.6,lanes:7}, rentLot:{x:-42,z:3}, wheel:{x:15.5,z:42,r:3,R:7.5,h:10.2,rz:1.2,fx:4.6,fz:1.75}, spawn:{x:0,z:9}, portal:{x:0,z:37,w:6,d:3,to:'fishing',label:'🚤 Đảo câu cá'},
     buildings:[
       Bd(-22,-27,10,6,8,0,0xe8876f,0xc96a55,'shop','SUNNY MART'), Bd(22,-27,10,6,10,0,0x8b72c8,0x6a53a8,'lottery','XỔ SỐ CITY'),
       Bd(-27,-9,6,10,9,H,0x4fa3ab,0x2f7f88,'cinema','RẠP PHIM'), Bd(-27,9,6,8,6,H,0x6fb7b0,0x3f8f8c,'fishshop','ĐẢO CÂU CÁ'),
@@ -259,7 +261,7 @@ const Scene3D = (() => {
     const bulb = new THREE.Mesh(new THREE.BoxGeometry(0.7,0.8,0.7), new THREE.MeshBasicMaterial({color:0xffe9b8})); bulb.position.y = 4.0; lamp.add(bulb);
     const cap = new THREE.Mesh(new THREE.ConeGeometry(0.6,0.4,4), dk); cap.position.y = 4.6; cap.rotation.y = Math.PI/4; lamp.add(cap);
     lamp.scale.setScalar(s); lamp.position.set(x, baseY, z); worldGroup.add(lamp);
-    nightReg.push({ o:bulb, mode:'basic', dim:0.22 });
+    nightReg.push({ o:bulb, mode:'lantern', day:0xe6dcc0, night:0xffe9b8 });
     addGlow(x, baseY + 4.0*s, z, 0xffd27a, 3.6*s);
     addPool(x, z, 4.8*s, 0xffe6b0, 0.5, baseY + 0.19);
   }
@@ -329,7 +331,8 @@ const Scene3D = (() => {
     nightReg.forEach(it=>{
       const o=it.o; if(!o) return;
       if(it.mode==='basic'||it.mode==='emissive'||it.mode==='pool'||it.mode==='halo') o.visible = k>0.015;
-      if(it.mode==='basic'){
+      if(it.mode==='lantern'){ o.visible = true; o.material.color.setHex(it.day).lerp(_tmp.setHex(it.night), k); }   // lồng đèn: luôn hiện (ban ngày kem nhạt, ban đêm sáng) → không hở giữa thân và nóc đèn
+      else if(it.mode==='basic'){
         const c0=it.base|| (it.base=o.material.color.clone());
         o.material.color.copy(c0).multiplyScalar(it.dim===undefined?1:(it.dim + (1-it.dim)*k));
       }
@@ -663,23 +666,52 @@ const Scene3D = (() => {
     const ls=makeTextSprite('THUÊ XE · MÁY BAY',{fontsize:30,color:'#fff',bg:'rgba(30,50,80,.9)'}); ls.position.set(Lt.x+1,3.1,Lt.z-11); ls.scale.set(0.9*ls.userData.ar,0.9,1); worldGroup.add(ls);
     { const hw=0.45*ls.scale.x; [-hw,hw].forEach(dx=> box(0.14,2.7,0.14,Lt.x+1+dx,1.35,Lt.z-11,0x2b3440)); }   // 2 cột đỡ biển
     lotBadge = null; refreshLotBadge();
-    // --- vòng quay + sàn gỗ ---
-    const wg=new THREE.Group(), rot=new THREE.Group(), gond=[]; rot.position.y=9;
-    rot.add(new THREE.Mesh(new THREE.TorusGeometry(7,0.18,6,40),L(0x3f8f8c)));
-    for(let i=0;i<4;i++){ const sp=box(14,0.1,0.1,0,0,0,0x3f8f8c,rot); sp.rotation.z=i*Math.PI/4; }
-    // 8 cabin thật: sàn + 4 cột + nóc + ghế ngồi + thanh treo (nhân vật ngồi được vào cabin)
+    // --- vòng quay: 2 vành + trục + 2 khung chữ A + 8 cabin (ghế liền khối, lưng ghế, lan can, nóc) ---
+    // Thông số lấy từ ZONES.plaza.wheel: R bán kính vành, h độ cao trục, rz nửa khoảng cách 2 vành, fx/fz chân khung chữ A
+    const wg=new THREE.Group(), rot=new THREE.Group(), gond=[];
+    const WR=W.R, WH=W.h, RZ=W.rz, FX=W.fx, FZ=W.fz, TEAL=0x3f8f8c, TEAL_D=0x2d6c6a, STEEL=0x9aa3ad, WHITE=0xeef3f7, CREAM=0xf7f1e4, YF=FERRIS_CAB.floor;
+    const cyl=(rt,rb,len,x,y,zz,c,pr)=>{ const g=new THREE.CylinderGeometry(rt,rb,len,14); g.rotateX(Math.PI/2); const o=new THREE.Mesh(g,L(c)); o.position.set(x,y,zz); o.castShadow=true; pr.add(o); return o; };   // trụ nằm theo trục z
+    rot.position.y=WH;
+    [-RZ,RZ].forEach(zz=>{
+      const rim=new THREE.Mesh(new THREE.TorusGeometry(WR,0.16,6,56),L(TEAL)); rim.position.z=zz; rim.castShadow=true; rot.add(rim);                 // vành ngoài
+      const inn=new THREE.Mesh(new THREE.TorusGeometry(WR*0.5,0.07,6,40),L(TEAL)); inn.position.z=zz; rot.add(inn);                                    // vành trong
+      for(let i=0;i<4;i++){ const sp=box(WR*2,0.09,0.09,0,0,zz,TEAL,rot); sp.rotation.z=i*Math.PI/4; }                                                  // nan hoa (trùng góc 8 cabin)
+      cyl(0.75,0.75,0.3,0,0,zz,TEAL_D,rot);                                                                                                            // moay-ơ
+    });
+    // 8 cabin: treo bằng chốt xuyên giữa 2 vành, luôn thẳng đứng (xoay ngược chiều vành)
     [0xe85c5c,0x4aa3df,0xf2c94c,0x8fc15a,0xd77aa0,0xf0a35e,0x8b72c8,0x58b8c0].forEach((c,i)=>{
-      const a=i/8*Math.PI*2, pv=new THREE.Group(); pv.position.set(Math.cos(a)*7, Math.sin(a)*7, 0);
-      box(1.5,0.14,1.3, 0,-1.16,0, c, pv);                                  // sàn cabin
-      [[-0.66,-0.56],[0.66,-0.56],[-0.66,0.56],[0.66,0.56]].forEach(([px,pz])=> box(0.11,1.15,0.11, px,-0.56,pz, 0xeef3f7, pv));   // 4 cột
-      box(1.68,0.12,1.48, 0,-0.02,0, 0xf7f1e4, pv);                         // nóc
-      box(1.1,0.22,1.1, 0,0.14,0, c, pv);                                    // mái chóp
-      box(1.16,0.46,0.1, 0,-0.36,-0.52, c, pv);                              // lưng ghế
-      box(1.16,0.1,0.42, 0,-0.62,-0.28, 0xf7f1e4, pv);                       // mặt ghế
-      box(0.16,0.55,0.16, 0,0.42,0, 0x9aa3ad, pv);                           // thanh treo lên vành
+      const a=i/8*Math.PI*2, pv=new THREE.Group(); pv.position.set(Math.cos(a)*WR, Math.sin(a)*WR, 0);
+      cyl(0.07,0.07,RZ*2+0.3,0,0,0,STEEL,pv);                                      // chốt treo
+      [-0.55,0.55].forEach(zz=> box(0.07,0.44,0.07, 0,-0.22,zz, STEEL, pv));       // 2 thanh treo xuống nóc
+      box(2.3,0.12,1.7, 0,-0.41,0, CREAM, pv);                                     // nóc
+      box(1.7,0.16,1.3, 0,-0.27,0, c, pv);                                         // mái chóp
+      box(2.1,0.14,1.5, 0,YF-0.07,0, c, pv);                                       // sàn (mặt sàn = YF)
+      [[-1,-1],[1,-1],[-1,1],[1,1]].forEach(([sx,sz])=> box(0.1,2.15,0.1, sx*0.95,YF+1.075,sz*0.7, WHITE, pv));   // 4 cột (sàn → nóc)
+      [-1,1].forEach(sx=>{                                                          // hai bên: tường thấp + thanh dọc + tay vịn
+        box(0.06,0.55,1.4, sx*0.95,YF+0.275,0, c, pv);
+        [-0.35,0,0.35].forEach(zz=> box(0.04,0.43,0.04, sx*0.95,YF+0.765,zz, WHITE, pv));
+        box(0.07,0.07,1.4, sx*0.95,YF+0.98,0, WHITE, pv);
+      });
+      box(1.9,0.55,0.06, 0,YF+0.275,-0.7, c, pv);                                  // phía trước (hướng về quảng trường, -z): tường thấp + tay vịn
+      box(1.9,0.07,0.07, 0,YF+0.98,-0.7, WHITE, pv);
+      box(1.9,1.15,0.06, 0,YF+0.575,0.7, c, pv);                                   // phía sau (+z): tường cao
+      box(1.6,0.3,0.8, 0,YF+0.15,0.25, CREAM, pv);                                // ghế liền khối (mặt ghế = YF+0.3)
+      box(1.6,0.62,0.1, 0,YF+0.61,0.6, CREAM, pv);                                // lưng ghế
       rot.add(pv); gond.push(pv);
     });
-    wg.add(rot); const l1=box(0.4,10,0.4,-2.6,4.6,0,0x3f8f8c,wg); l1.rotation.z=0.3; const l2=box(0.4,10,0.4,2.6,4.6,0,0x3f8f8c,wg); l2.rotation.z=-0.3;
+    wg.add(rot);
+    // 2 khung chữ A ở hai bên (ngoài 2 vành): chân loe ra dưới đất, chụm lại ở ổ trục
+    const legLen=Math.hypot(FX,WH), legAng=Math.atan2(FX,WH), yb=WH*0.28;
+    [-FZ,FZ].forEach(zz=>{
+      [-1,1].forEach(sx=>{
+        const lg=box(0.34,legLen,0.34, sx*FX/2,WH/2,zz, TEAL, wg); lg.rotation.z=sx*legAng;                       // chân nghiêng vào trong (chữ A, không phải chữ V)
+        box(0.8,0.14,0.8, sx*FX,0.07,zz, 0x555e66, wg);                                                            // đế chân
+      });
+      box(2*FX*(1-yb/WH),0.16,0.16, 0,yb,zz, TEAL_D, wg);                                                         // thanh giằng ngang
+      cyl(0.62,0.62,0.5,0,WH,zz,TEAL_D,wg);                                                                        // ổ trục
+    });
+    [-1,1].forEach(sx=> box(0.16,0.16,2*FZ, sx*FX,0.2,0, TEAL_D, wg));                                             // giằng nối 2 khung ở chân
+    cyl(0.26,0.26,2*FZ+0.9,0,WH,0,STEEL,wg);                                                                       // trục chính xuyên qua 2 ổ trục
     wg.position.set(W.x,0,W.z); worldGroup.add(wg); ferris={rot,gond,group:wg};
   }
 
@@ -767,7 +799,7 @@ const Scene3D = (() => {
       const cap=new THREE.Mesh(new THREE.ConeGeometry(0.6,0.4,4),dk); cap.position.y=4.6; cap.rotation.y=Math.PI/4; lamp.add(cap);
       const base=new THREE.Mesh(new THREE.CylinderGeometry(0.2,0.28,0.22,8),dk); base.position.y=0.11; lamp.add(base);
       lamp.position.set(l.x,0,l.z); worldGroup.add(lamp);
-      nightReg.push({ o:bulb, mode:'basic', dim:0.22 });
+      nightReg.push({ o:bulb, mode:'lantern', day:0xe6dcc0, night:0xffe9b8 });
       addLightPool(l.x, l.z, 4.0, 8.5);
     });
 
@@ -968,6 +1000,7 @@ const Scene3D = (() => {
     }
     if(z.race && Math.hypot(x-z.race.x, Math.max(Math.abs(zpos-z.race.z)-z.race.hs,0)) < z.race.ro+r) return true;
     if(z.wheel && Math.hypot(x-z.wheel.x,zpos-z.wheel.z)<z.wheel.r+r) return true;
+    if(z.wheel && Math.abs(x-z.wheel.x)<z.wheel.fx+0.4+r && Math.abs(zpos-z.wheel.z)<z.wheel.fz+0.4+r) return true;   // chân 2 khung chữ A
     if(z.water){ const w=z.water; if(Math.abs(x-w.x)<w.w/2 && Math.abs(zpos-w.z)<w.d/2 && zpos>w.z-w.d/2+2) return true; }
     return false;
   }
@@ -1017,14 +1050,24 @@ const Scene3D = (() => {
   // ===== VÒNG ĐU QUAY: lên/xuống cabin =====
   const _fv = new THREE.Vector3();
   // Vị trí ngồi trong cabin (world) — cabin i treo ở góc i/8 của vành, xoay theo vòng
+  // Đặt góc vòng + cabin theo đúng thời điểm `time` (giây) rồi cập nhật ma trận cả chuỗi wheel→vành→cabin.
+  // game.js gọi hàm này NGAY TRƯỚC khi đặt người vào ghế (cùng `time` với render) → ghế không bao giờ chậm 1 khung hình so với cabin.
+  function ferrisSync(time){
+    if(!ferris) return;
+    const a = time*FERRIS_SPEED;
+    ferris.rot.rotation.z = a;
+    ferris.gond.forEach(g=>{ g.rotation.z = -a; });
+    ferris.group.updateMatrixWorld(true);
+  }
   function ferrisSeat(i, out){
     const g = ferris && ferris.gond[i]; if(!g) return null;
-    g.updateMatrixWorld(true);
+    g.updateWorldMatrix(true, false);                               // cập nhật cả chuỗi cha (trước đây chỉ cabin → ma trận vành bị cũ 1 khung)
     out = out || new THREE.Vector3();
-    return out.set(0, -1.24, -0.16).applyMatrix4(g.matrixWorld);   // đúng mặt ghế trong cabin
+    const s = FERRIS_CAB.seat;
+    return out.set(s.x, s.y, s.z).applyMatrix4(g.matrixWorld);       // gốc chân nhân vật: chân đặt trên sàn, mông đúng mặt ghế
   }
-  // Hướng mặt của người ngồi: nhìn ra ngoài vành (bám theo cabin đang quay)
-  function ferrisYaw(i){ const g = ferris && ferris.gond[i]; if(!g) return 0; g.updateMatrixWorld(true); return g.rotation.y; }
+  // Hướng mặt của người ngồi (bám theo cabin đang quay)
+  function ferrisYaw(i){ const g = ferris && ferris.gond[i]; if(!g) return 0; return FERRIS_CAB.yaw + g.rotation.y; }   // yaw = π: ngồi quay mặt về -z, tức về phía quảng trường (vòng ở z=42, quảng trường ở z≈0)
   function nearFerris(x, z){ const W = ZONES.plaza.wheel; return !!(W && ferris && Math.hypot(x-W.x, z-W.z) < W.r + 3.5); }
   function ferrisBoardSpot(){ const W = ZONES.plaza.wheel; return { x: W.x, z: W.z + W.r + 1.6 }; }
   // Chạm vào vòng đu quay (đo theo trục đứng của nó trên màn hình)
@@ -1032,7 +1075,7 @@ const Scene3D = (() => {
     const W = ZONES.plaza.wheel; if(!W || !ferris) return false;
     camera.updateMatrixWorld();
     const pr=(x,y,z)=>{ const v=_fv.set(x,y,z).project(camera); return v.z<1 ? [(v.x+1)/2*window.innerWidth, (1-v.y)/2*window.innerHeight] : null; };
-    const a=pr(W.x, 1.5, W.z), b=pr(W.x, 16, W.z); if(!a || !b) return false;
+    const a=pr(W.x, 1.5, W.z), b=pr(W.x, W.h + W.R, W.z); if(!a || !b) return false;
     const dx=b[0]-a[0], dy=b[1]-a[1];
     const t=Math.max(0, Math.min(1, ((cx-a[0])*dx + (cy-a[1])*dy) / ((dx*dx + dy*dy) || 1)));
     return Math.hypot(cx-(a[0]+dx*t), cy-(a[1]+dy*t)) < 80;
@@ -1079,7 +1122,7 @@ const Scene3D = (() => {
       }
     }
     spinners.forEach(m=>{ m.rotation.y = time*1.5; });
-    if(ferris){ ferris.rot.rotation.z = time*0.2; ferris.gond.forEach(g=>g.rotation.z = -time*0.2); }
+    ferrisSync(time);
     if(fountainFx) fountainFx.update(time);
     for(let i=0;i<animFns.length;i++) animFns[i](time);      // sóng biển, thuyền nhấp nhô…
     // ===== ngày / đêm: giờ máy quyết định, đổi mượt ~1,2s (đổi tức thời thì mắt khó chịu) =====
@@ -1109,7 +1152,7 @@ const Scene3D = (() => {
     // ngày / đêm (tự chạy theo giờ thiết bị)
     setNight, followClock, isNight, get night(){ return DN.k; }, get nightTarget(){ return DN.target; },
     // vòng đu quay
-    ferrisSeat, ferrisYaw, nearFerris, pickFerris, ferrisBoardSpot, get ferrisCabins(){ return ferris ? ferris.gond.length : 0; },
+    ferrisSync, ferrisSeat, ferrisYaw, nearFerris, pickFerris, ferrisBoardSpot, get ferrisCabins(){ return ferris ? ferris.gond.length : 0; },
     // đảo câu cá
     atFishSpot: (x,z)=> atDock('fishing', x, z),
     fishDir,
