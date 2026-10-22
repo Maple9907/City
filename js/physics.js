@@ -31,7 +31,7 @@ const Phys = (() => {
     });
     (zone.trees || []).forEach(t => circ('tree', t.x, t.z, 0.34, 0, 2.45));
     (zone.lamps || []).forEach(l => circ('lamp', l.x, l.z, 0.26, 0, 4.9));
-    (zone.benches || []).forEach(b => rect('bench', b.x, b.z + 0.05, 1.0, 0.3, b.ry || 0, 0, 0.62));
+    (zone.benches || []).forEach(b => rect('bench', b.x, b.z + 0.05, 1.0, 0.3, b.ry || 0, 0, 0.62 + ((typeof Scene3D !== 'undefined' && Scene3D.benchBase) ? Scene3D.benchBase(b) : 0)));   // ghế đứng trên sân gạch → đỉnh ghế cao thêm đúng bằng độ cao nền
     (zone.flowers || []).forEach(f => rect('flowerbed', f.x, f.z, 1.6, 0.75, 0, 0, 1.15));
     if (zone.fountain) circ('fountain', zone.fountain.x, zone.fountain.z, (typeof Fountain !== 'undefined' && Fountain.RADIUS) || 3.2, 0, 5.1);
     if (zone.screen) rect('screen', zone.screen.x, zone.screen.z, zone.screen.w / 2 + 0.4, 0.5, 0, 0, zone.screen.y + zone.screen.h);

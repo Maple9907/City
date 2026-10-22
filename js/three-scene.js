@@ -855,7 +855,7 @@ const Scene3D = (() => {
       // Ghế thấp đúng tỉ lệ nhân vật chibi: mặt ghế cao 0.33 → ngồi xuống là bàn chân đặt phẳng trên mặt đất.
       bx(2,0.09,0.55,0,0.185,0.05,wd); bx(2,0.08,0.1,0,0.42,-0.22,wd); bx(2,0.08,0.1,0,0.56,-0.22,wd);
       [-0.9,0.9].forEach(x=>{ bx(0.1,0.33,0.55,x,0.065,0,mt); bx(0.1,0.52,0.1,x,0.30,-0.22,mt); bx(0.1,0.07,0.6,x,0.32,0,mt); });
-      bench.position.set(b.x,0.1,b.z); bench.rotation.y = b.ry||0; worldGroup.add(bench);
+      bench.position.set(b.x,0.1+benchBase(b),b.z); bench.rotation.y = b.ry||0; worldGroup.add(bench);   // +benchBase: ghế đứng trên sân gạch (0.13) thay vì chìm vào
     });
 
     // lamps (đèn lồng) — ban đêm bật sáng: bóng đèn phát quang + quầng sáng trên mặt đất
@@ -1032,12 +1032,29 @@ const Scene3D = (() => {
     }
     return y;
   }
+  // Độ cao nền dưới một cái ghế = mức cao nhất của lớp nền trang trí tại tâm ghế và hai đầu ghế (ghế dài 2).
+  // Ghế vốn dựng theo mốc y=0 (bench.position.y = 0.1 → chân ghế chạm y=0) nên đặt trên sân gạch cao 0.13 quanh đài phun thì chân ghế
+  // và chân người ngồi bị chìm vào gạch. Nay ghế được nâng đúng bằng độ cao này (makeBench / characterFloor / va chạm cùng dùng) và
+  // người ngồi đứng trên đúng mặt nền đó. Cache trên chính đối tượng ghế (nền trang trí là tĩnh).
+  function benchBase(b){
+    if(b._base !== undefined) return b._base;
+    let y = 0;
+    if(ZONES.plaza && ZONES.plaza.benches.indexOf(b) >= 0){
+      const ry = b.ry || 0, ex = Math.cos(ry)*0.95, ez = -Math.sin(ry)*0.95;       // trục dài của ghế (cùng phép quay với cx() ở aircraftCollision)
+      y = Math.max(plazaDecorY(b.x, b.z), plazaDecorY(b.x+ex, b.z+ez), plazaDecorY(b.x-ex, b.z-ez));
+    }
+    return (b._base = y);
+  }
   function groundY(zoneId, x, z, noDecor){
     if(zoneId==='fishing') return Island.groundY(x, z);    // ván bến gỗ cao 0.3, cát 0.04
     if(zoneId!=='plaza') return 0;
     if(Math.abs(x)<11 && z>-38.5 && z<-31.5) return 0.5;
     if(Math.abs(x)<2.5){ if(z>=-31.5 && z<-30.5) return 0.45; if(z>=-30.5 && z<-29.5) return 0.30; if(z>=-29.5 && z<-28.5) return 0.15; }
-    return noDecor ? 0 : plazaDecorY(x, z);
+    if(noDecor){                                          // đang ngồi ghế: đứng trên nền của CHÍNH cái ghế đó (không phải y=0 cứng)
+      const b = nearBench(zoneId, x, z, 1.2);
+      if(b) return benchBase(b);
+    }
+    return plazaDecorY(x, z);
   }
   // GChar.update đặt lại position.y mỗi khung (nhún bước đi/nhảy/ngồi) nên cộng độ cao nền SAU nó; làm mượt để leo bậc không bị giật
   function updateCharacter(charGroup, dt, time){
@@ -1184,8 +1201,8 @@ const Scene3D = (() => {
     }
     if(zone.benches){
       for(const b of zone.benches){
-        const ry=b.ry||0, poly=rectPoly(b.x,b.z,1.05,0.36,ry);
-        for(const p of parts) if(p.maxY>0.1&&p.minY<1.35&&polygonsOverlap(p.points,poly)) return contact('bench',1.35,b);
+        const ry=b.ry||0, poly=rectPoly(b.x,b.z,1.05,0.36,ry), bt=1.35+benchBase(b);
+        for(const p of parts) if(p.maxY>0.1&&p.minY<bt&&polygonsOverlap(p.points,poly)) return contact('bench',bt,b);
       }
     }
     if(zone.screen){
@@ -1406,14 +1423,14 @@ const Scene3D = (() => {
     for(const b of zone.benches||[]){
       const ry=b.ry||0;
       const cx=(lx,lz)=>({x:b.x+lx*Math.cos(ry)+lz*Math.sin(ry),z:b.z-lx*Math.sin(ry)+lz*Math.cos(ry)});
-      const seat=cx(0,0.05), back=cx(0,-0.22);
+      const seat=cx(0,0.05), back=cx(0,-0.22), bb=benchBase(b);
       const parts=[
-        {x:seat.x,z:seat.z,hx:1.0,hz:0.275,lo:0.28,hi:0.34},   // mặt ghế (thấp, đúng tầm hông nhân vật)
-        {x:back.x,z:back.z,hx:1.0,hz:0.05,lo:0.48,hi:0.56},    // thanh lưng dưới
-        {x:back.x,z:back.z,hx:1.0,hz:0.05,lo:0.62,hi:0.70},    // thanh lưng trên
+        {x:seat.x,z:seat.z,hx:1.0,hz:0.275,lo:0.28+bb,hi:0.34+bb},   // mặt ghế (thấp, đúng tầm hông nhân vật)
+        {x:back.x,z:back.z,hx:1.0,hz:0.05,lo:0.48+bb,hi:0.56+bb},    // thanh lưng dưới
+        {x:back.x,z:back.z,hx:1.0,hz:0.05,lo:0.62+bb,hi:0.70+bb},    // thanh lưng trên
         ...[-0.9,0.9].flatMap(dx=>[
-          {x:b.x+dx*Math.cos(ry),z:b.z-dx*Math.sin(ry),hx:0.05,hz:0.275,lo:0.02,hi:0.33},
-          {x:b.x+dx*Math.cos(ry),z:b.z-dx*Math.sin(ry),hx:0.05,hz:0.3,lo:0.39,hi:0.46}
+          {x:b.x+dx*Math.cos(ry),z:b.z-dx*Math.sin(ry),hx:0.05,hz:0.275,lo:0.02+bb,hi:0.33+bb},
+          {x:b.x+dx*Math.cos(ry),z:b.z-dx*Math.sin(ry),hx:0.05,hz:0.3,lo:0.39+bb,hi:0.46+bb}
         ])
       ];
       if(!skipBench||skipBench!==true&&skipBench!==b){
@@ -1515,7 +1532,7 @@ const Scene3D = (() => {
       add(top,circleInsideRect(x,zpos,r+0.06,b.x,b.z,(sw2?b.d:b.w)/2-0.12,(sw2?b.w:b.d)/2-0.12,b.ry||0));
     }
     for(const b of zone.benches||[])
-      add(0.34,circleInsideRect(x,zpos,0.06,b.x,b.z+0.05,0.94,0.215,b.ry||0));
+      add(0.34+benchBase(b),circleInsideRect(x,zpos,0.06,b.x,b.z+0.05,0.94,0.215,b.ry||0));
     for(const f of zone.flowers||[])
       add(1.15,circleInsideRect(x,zpos,r,f.x,f.z,BED.hw-0.08,BED.hd-0.08,0));
     for(const slot of lotSlots||[]){
@@ -1685,7 +1702,7 @@ const Scene3D = (() => {
 
   return { init, buildZone, createCharacter, setChatBubble, updateCharacter,
     updateCamera, getMoveDir, collides, characterCollision, characterFloor, aircraftCollision, roofLandingAltitude, atPortal, nearBuilding, atDock, render, nearSpot, pickBench, nearBench, setTapHandler, setScreenText, setTvHole, screenCorners2D, setRacers, setRaceBoard, getLotSlots, setLotTaken, setLotBadgeVisible, lotText,
-    getZone, groundY, CHAR_DEFS,
+    getZone, groundY, benchBase, CHAR_DEFS,
     // ngày / đêm (tự chạy theo giờ thiết bị)
     setNight, followClock, isNight, get night(){ return DN.k; }, get nightTarget(){ return DN.target; },
     // vòng đu quay

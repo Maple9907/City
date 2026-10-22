@@ -1161,6 +1161,14 @@
         return true;
       },
       unmount(){ if(riding) dismountVehicle(); },
+      sit(i){ const b = Scene3D.getZone(currentZone).benches[i]; if(!b) return null; sitOn(b); return { x:b.x, z:b.z, base:Scene3D.benchBase(b) }; },   // thử: ngồi vào ghế thứ i
+      stand(){ standUp(); },
+      feetY(){                                           // độ cao thế giới thấp nhất của hai bàn chân (xương GLB)
+        const B = playerMesh.userData.parts.glb && playerMesh.userData.parts.glb.bones; if(!B) return null;
+        playerMesh.updateMatrixWorld(true); const v = new THREE.Vector3(), out = {};
+        ['footL','footR','toeL','toeR'].forEach(k => { if(B[k]){ B[k].getWorldPosition(v); out[k] = +v.y.toFixed(3); } });
+        return out;
+      },
       move(x, z){ playerMesh.position.set(x, 0, z); resetVerticalState(currentZone,x,z); playerVel.x = 0; playerVel.z = 0; },
       state(){
         const rp = p => +p.toFixed(2);
