@@ -687,7 +687,7 @@
     riding = { type:slot.kind, slot:slot.i, v, prop:ud.prop||null, wheels:ud.wheels||[], steering:ud.steering||null,
                frontWheels:ud.frontWheels||[], seat:ud.seat, flightBoxes:ud.flightBoxes||null, collisionBoxes:ud.collisionBoxes||null,
                yaw:slot.yaw, pitch:0, bank:0, alt:slot.kind==='plane'?0.03:0, targetAlt:slot.kind==='plane'?0.03:0,
-               remain:Vehicles.RENT_SEC, maxSpeed:ud.maxSpeed, autoDescend:false, engine:0, speed:0, netT:0, stuckT:0, hintT:0 };
+               seatZ0:ud.seat.z, remain:Vehicles.RENT_SEC, maxSpeed:ud.maxSpeed, autoDescend:false, engine:0, speed:0, netT:0, stuckT:0, hintT:0 };
     const um = playerMesh.userData;
     um.moving = false; um.action = 'ride'; um.actionT = 0; player.action = 'ride';   // ngồi thật lên ghế (tư thế lái xe)
     um.rideMode = slot.kind; um.vehicleSteer = 0; um.vehicleSpeed = 0; um.vehiclePitch = 0;
@@ -831,7 +831,7 @@
     playerMesh.userData.vehicleSteer = steer;
     playerMesh.userData.vehicleSpeed = speed;
     playerMesh.userData.vehiclePitch = isPlane ? r.pitch : 0;
-    if(r.steering) r.steering.rotation.z = -steer*0.48;
+    Vehicles.animate(r.v, r.type, steer, isPlane ? r.pitch : 0);         // vô-lăng xoay / yoke xoay + kéo — cùng hằng số với IK bàn tay (Vehicles.grip)
     r.frontWheels.forEach(w => { w.rotation.y = steer*0.38; });
     if(impact > 3 && (r.hitCd||0) <= 0){ r.hitCd = 1.5; UI.toast(isPlane ? 'Máy bay va vào vật cản!' : 'Xe va vào vật cản!'); }
     if(r.hitCd > 0) r.hitCd -= dt;
@@ -1049,10 +1049,11 @@
       }
       if(riding){
         // đặt nhân vật ngồi vào ghế xe (override mọi thứ animation đặt lại); luôn giữ tư thế 'sit'
+        riding.seat.z = riding.seatZ0 + (playerMesh.userData.rideShift || 0);    // ghế trượt theo kích thước model (character.js tính)
         const sp = seatWorld(riding);
         playerMesh.position.set(sp.x, sp.y, sp.z);
          playerMesh.rotation.order='YXZ';
-         playerMesh.rotation.set(riding.type==='plane'?-riding.pitch:0,riding.yaw,riding.type==='plane'?riding.bank*0.7:0,'YXZ');
+         playerMesh.rotation.set(riding.type==='plane'?-riding.pitch:0,riding.yaw,riding.type==='plane'?riding.bank:0,'YXZ');   // phi công cứng theo thân máy bay (trước đây bank*0.7 làm lệch ghế)
         playerMesh.userData.face = riding.yaw;
         playerMesh.userData.moving = false;
         if(playerMesh.userData.action !== 'ride'){ playerMesh.userData.action = 'ride'; playerMesh.userData.actionT = 0; }

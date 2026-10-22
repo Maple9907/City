@@ -40,6 +40,7 @@ const Fishing = (() => {
   // Với rarityMultiplier 1,65: Ít gặp ×1,23 · Hiếm ×1,65 · Sử thi ×1,81 · Huyền thoại ×1,98.
   const TIER_BOOST = { 'Phổ biến':0, 'Ít gặp':0.35, 'Hiếm':1, 'Sử thi':1.25, 'Huyền thoại':1.5 };
 
+  const CATCH_SEC = 3.0;   // pha 'caught' = hoạt ảnh bắt cá của nhân vật (ghì cá → nhấc lên tay → giơ chiến thắng), khớp FISH_T.total trong js/character.js
   let state = 'idle'; // idle | casting | waiting | biting | caught
   let castBait = null;
   let timer = 0;
@@ -114,7 +115,7 @@ const Fishing = (() => {
 
   function reel(player, onEvent){
     if(state==='biting'){
-      state='caught'; timer=1.5;
+      state='caught'; timer=CATCH_SEC;
       player.inventory.fish++;
       player.inventory.fishValue = (player.inventory.fishValue||0) + currentFish.value;
       player.inventory.fishDex = player.inventory.fishDex || {};

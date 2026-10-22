@@ -29,7 +29,7 @@
 const GLBChar = (() => {
   const HIP_Y = 1.2;                         // độ cao hông của rig dựng sẵn (pivot body / legL / legR)
   const ARM_RATIO = 0.86;                    // tay (vai → cổ tay) = 0.86 × thân (hông → vai) của CHÍNH model đó — nam/nữ lệch nhau tới 50% nên không thể dùng một con số cố định
-  const DEFAULTS = { height:3.1, headScale:1.25, outline:true, lift:0.22, gripAhead:0.14 };
+  const DEFAULTS = { height:3.1, headScale:1.25, outline:true, lift:0.22, gripAhead:0.14, palm:0.12 };
   const models = {};                         // key → { cfg, scene, state:'loading'|'ready'|'failed', fit, mats, outlineMat }
   const listeners = [];                      // gọi khi 1 model sẵn sàng (kể cả về muộn sau preload) – dùng để vẽ lại ảnh chọn nhân vật
   const onReady = cb => { listeners.push(cb); };
@@ -219,14 +219,12 @@ const GLBChar = (() => {
     const F = m.fit;
     // co chân + phóng đầu (scale đều trên xương nên không méo khi xoay), rồi đặt hông đúng độ cao rig
     B.upLegL.scale.multiplyScalar(F.ls); B.upLegR.scale.multiplyScalar(F.ls); B.head.scale.multiplyScalar(F.hs);
-    // Tay: co DỌC TRỤC XƯƠNG (mọi rig ở đây đặt xương con lệch theo +Y cục bộ) nên tay ngắn lại mà không bị mỏng đi;
-    // rig lạ (con không nằm trên trục Y) thì co đều 3 trục như trước.
-    const scaleArm = (bone, child) => {
-      const d = child ? child.position : null;
-      if(d && d.lengthSq() > 1e-8 && Math.abs(d.y) / Math.sqrt(d.lengthSq()) > 0.9) bone.scale.y *= F.as;
-      else bone.scale.multiplyScalar(F.as);
-    };
-    scaleArm(B.upperArmL, B.foreArmL); scaleArm(B.upperArmR, B.foreArmR);
+    // Tay: co ĐỀU 3 trục ở xương cánh tay trên (con cháu thừa hưởng). Trước đây chỉ co dọc trục xương để tay không mỏng đi, nhưng co không đều ở xương CHA
+    // làm cẳng tay bị méo + đổi chiều dài mỗi khi khuỷu gập (tỉ lệ co tác dụng theo trục của xương cha, sau phép quay khuỷu) → bàn tay không bao giờ
+    // tới đúng chỗ khi nắm vô-lăng / đặt lên đùi. Co đều thì chiều dài tay cố định, IK chính xác. Bàn tay được phóng lại một phần để không bé tí.
+    B.upperArmL.scale.multiplyScalar(F.as); B.upperArmR.scale.multiplyScalar(F.as);
+    const hk = Math.min(1.3, Math.pow(1 / Math.max(0.3, F.as), 0.75));
+    B.handL.scale.multiplyScalar(hk); B.handR.scale.multiplyScalar(hk);
     holder.rotation.y = F.yaw; holder.scale.setScalar(F.k);
     holder.position.set(0, HIP_Y - F.k * F.upY, 0);
     g.updateMatrixWorld(true);
@@ -273,17 +271,83 @@ const GLBChar = (() => {
       const pq = worldQ(e.bone.parent, new THREE.Quaternion());
       if(a < 0) e.mid.copy(pq); else e.mid.copy(ents[a].W0).invert().multiply(pq);
     });
-    S.handR = (sL === 'R') ? B.handL : B.handR;                            // tay ở +X (pivot armR/foreR) cầm cần câu
-    if(p.foreR){ S.rodAnchor = new THREE.Group(); S.rodAnchor.name = 'rodAnchor'; g.add(S.rodAnchor); }
+    // bảng xương theo phía pivot ('L' = -X, 'R' = +X) cho IK (character.js) + đo kích thước thật của model để chia tỉ lệ tư thế
+    S.arm = {}; S.leg = {};
+    [['upperArmL','foreArmL','handL'], ['upperArmR','foreArmR','handR']].forEach(([u, f, h]) => { S.arm[side(B[u])] = { up:B[u], fore:B[f], hand:B[h] }; });
+    [['upLegL','lowLegL','footL','toeL'], ['upLegR','lowLegR','footR','toeR']].forEach(([u, l, f, t]) => { S.leg[side(B[u])] = { up:B[u], low:B[l], foot:B[f], toe:B[t] || null }; });
+    S.dims = measureDims(S, obj);
+    S.palm = m.cfg.palm !== undefined ? m.cfg.palm : DEFAULTS.palm;
+    S.fingers = buildFingers(B, side); S.gripPrev = { L:0, R:0 };
     return S;
+  }
+
+  // ---- Ngón tay (nắm vô-lăng / tay cầm / cần câu) ----
+  // Mọi rig Mixamo / Blender đều có xương ngón (tên chứa Thumb|Index|Middle|Ring|Pinky). Trục gập = trục ngang bàn tay (ngón trỏ → ngón út) lấy từ vị trí xương THẬT lúc nghỉ,
+  // chiều gập chọn sao cho đầu ngón cong về phía lòng bàn tay (xuống / vào thân) → không phụ thuộc tên Left/Right hay hệ trục của từng file. p.grip.L/R = 0..1.
+  const FING_RE = /(thumb|index|middle|ring|pinky)/i, CURL_K = { thumb:[0.35, 0.55, 0.45, 0.3], other:[0.85, 1.0, 0.75, 0.5] }, CURL_MAX = 1.35;
+  function buildFingers(B, side){
+    const out = { L:[], R:[] }, W = b => worldP(b, new THREE.Vector3());
+    [B.handL, B.handR].forEach(hd => {
+      const sd = side(hd), roots = {};
+      hd.children.forEach(c => { const m = FING_RE.exec(c.name || ''); if(m && c.isBone !== false) roots[m[1].toLowerCase()] = c; });
+      if(!roots.index || !roots.pinky || !roots.middle) return;
+      const chain = r => { const o = []; for(let b = r; b; b = b.children.find(x => x.isBone && FING_RE.test(x.name || '')) || null){ if(!/_end$/i.test(b.name || '')) o.push(b); } return o; };
+      const A = W(roots.pinky).sub(W(roots.index)).normalize();
+      const mc = chain(roots.middle), v = W(mc[mc.length - 1]).sub(W(roots.middle));
+      const c = new THREE.Vector3().crossVectors(A, v), hp = W(hd), inward = hp.x > 0 ? -1 : 1;
+      const sg = (-c.y + 0.7*inward*c.x + 0.3*c.z) >= 0 ? 1 : -1;                    // + : cong xuống / vào thân / ra trước
+      Object.keys(roots).forEach(name => {
+        const ks = name === 'thumb' ? CURL_K.thumb : CURL_K.other;
+        chain(roots[name]).forEach((b, i) => {
+          const axis = A.clone().applyQuaternion(worldQ(b, new THREE.Quaternion()).invert()).multiplyScalar(sg);
+          out[sd].push({ bone:b, q0:b.quaternion.clone(), axis, k:ks[Math.min(i, ks.length - 1)] });
+        });
+      });
+    });
+    return out;
+  }
+  const _fq = new THREE.Quaternion();
+  function applyGrip(S, p){
+    const gp = p.grip;
+    for(let i = 0; i < 2; i++){
+      const sd = i ? 'R' : 'L', gv = gp ? Math.max(0, Math.min(1, gp[sd] || 0)) : 0;
+      if(Math.abs(gv - S.gripPrev[sd]) < 1e-3) continue;                              // chỉ cập nhật khi đổi (không tốn gì lúc đi bộ)
+      S.gripPrev[sd] = gv;
+      const F = S.fingers[sd];
+      for(let j = 0; j < F.length; j++){ const f = F[j]; _fq.setFromAxisAngle(f.axis, f.k * gv * CURL_MAX); f.bone.quaternion.copy(f.q0).multiply(_fq); }
+    }
+  }
+
+  // Kích thước thật (hệ toạ độ nhóm, trước scale 0.58) của model SAU khi co chân / phóng đầu: để IK đặt tay / gối / bàn chân đúng chỗ
+  // cho mọi model (nam to khoẻ, nữ nhỏ nhắn; đùi/cẳng, vai/hông khác nhau). Đo ở tư thế nghỉ nên không phụ thuộc pose.
+  function measureDims(S, obj){
+    const P = b => worldP(b, new THREE.Vector3());
+    const D = { hip:{}, knee:{}, ankle:{}, toe:{}, shoulder:{}, elbow:{}, wrist:{} };
+    ['L', 'R'].forEach(sd => {
+      const a = S.arm[sd], l = S.leg[sd];
+      D.hip[sd] = P(l.up); D.knee[sd] = P(l.low); D.ankle[sd] = P(l.foot); D.toe[sd] = l.toe ? P(l.toe) : null;
+      D.shoulder[sd] = P(a.up); D.elbow[sd] = P(a.fore); D.wrist[sd] = P(a.hand);
+    });
+    const avg = (A, B2) => (A.L.distanceTo(B2.L) + A.R.distanceTo(B2.R)) / 2;
+    D.thigh = avg(D.hip, D.knee); D.shin = avg(D.knee, D.ankle); D.upper = avg(D.shoulder, D.elbow); D.fore = avg(D.elbow, D.wrist);
+    D.hipW = Math.abs(D.hip.L.x - D.hip.R.x); D.shoulderW = Math.abs(D.shoulder.L.x - D.shoulder.R.x);
+    // đế giày: điểm thấp nhất của lưới (đã skin) → cổ chân cao hơn đế bao nhiêu
+    let low = Infinity;
+    S.meshes.forEach(sm => {
+      const pos = sm.geometry.attributes.position, step = Math.max(1, Math.floor(pos.count / 4000));
+      for(let i = 0; i < pos.count; i += step){ skinned(sm, i, _vv).applyMatrix4(sm.matrixWorld); if(_vv.y < low) low = _vv.y; }
+    });
+    D.sole = low;
+    D.ankleH = Math.max(0.03, (D.ankle.L.y + D.ankle.R.y) / 2 - low);
+    D.toeLen = D.toe.L ? Math.max(0.1, D.toe.L.z - D.ankle.L.z) : 0.3;
+    return D;
   }
 
   // ------------------------------------------------------------------ mỗi khung: pivot giả → xương thật
   const _D = { body:new THREE.Quaternion(), head:new THREE.Quaternion(), armL:new THREE.Quaternion(), armR:new THREE.Quaternion(),
     foreL:new THREE.Quaternion(), foreR:new THREE.Quaternion(), legL:new THREE.Quaternion(), legR:new THREE.Quaternion(), shinL:new THREE.Quaternion(), shinR:new THREE.Quaternion() };
   const _id = new THREE.Quaternion(), _w = new THREE.Quaternion(), _pw = new THREE.Quaternion(), _t = new THREE.Quaternion();
-  const ROD_ACT = { rod:1, fish:1, cast:1, reel:1, bite:1 };
-
+  
   function sync(g, p){
     const S = p.glb; if(!S) return;
     _D.body.copy(p.body.quaternion); _D.head.copy(p.head.quaternion);
@@ -297,22 +361,39 @@ const GLBChar = (() => {
       if(e.src === 'none'){ e.qs.copy(e.R0); continue; }                    // hông: giữ nguyên
       let d;
       if(e.src === 'body') d = _D.body; else if(e.src === 'head') d = _D.head;
-      else if(e.src === 'footL') d = _D.shinL; else if(e.src === 'footR') d = _D.shinR; else d = _D[e.src];
-      if(e.frac !== 1 && e.frac !== undefined){ _t.copy(_id).slerp(d, e.frac); d = _t; }
+      else if(e.src === 'footL' || e.src === 'footR'){
+        const fo = p.footD && p.footD[e.src === 'footL' ? 'L' : 'R'];       // bàn chân do pose chỉ định (đặt phẳng trên sàn / bàn đạp) → dùng đúng góc đó
+        if(fo) d = fo; else d = _D[e.src === 'footL' ? 'shinL' : 'shinR'];
+      }
+      else d = _D[e.src];
+      if(e.frac !== 1 && e.frac !== undefined && !(e.src.charAt(0) === 'f' && e.src.length === 5 && e.src.indexOf('foot') === 0 && p.footD && p.footD[e.src === 'footL' ? 'L' : 'R'])){ _t.copy(_id).slerp(d, e.frac); d = _t; }
       e.qs.copy(d).multiply(e.R0);                                          // Q_thếgiới = Δ × R0
       // quay cục bộ = (quay thế giới của cha)^-1 × Q_thếgiới ; cha = (xương điều khiển gần nhất) × (đoạn trung gian lúc nghỉ)
       if(e.anc < 0) _pw.copy(e.mid); else _pw.copy(ents[e.anc].qs).multiply(e.mid);
       e.bone.quaternion.copy(_pw).invert().multiply(e.qs);
     }
-    // cần câu: gắn vào bàn tay của model, giữ đúng hướng cẳng tay theo rig
-    if(S.rodAnchor && ROD_ACT[g.userData && g.userData.action]){
-      g.updateMatrixWorld(true);
-      const R = _D.foreR, hp = worldP(S.handR, _v); g.worldToLocal(hp);
-      S.rodAnchor.quaternion.copy(R);
-      _v2.set(0, -S.gripAhead, 0).applyQuaternion(R); hp.add(_v2);
-      _v2.set(0, -0.5, 0.05).applyQuaternion(R); hp.sub(_v2);               // rod.position trong buildRod = (0,-0.5,0.05)
-      S.rodAnchor.position.copy(hp);
-    }
+    applyGrip(S, p);
+  }
+
+  // ---- truy vấn vị trí khớp THẬT của xương (hệ toạ độ nhóm): dùng cho IK + đặt cần câu. Gọi SAU sync() ----
+  // vai: gốc xương cánh tay trên (đi theo thân khi nghiêng) · lòng bàn tay: cổ tay + hướng cẳng tay × palm
+  function shoulder(g, p, side, out){
+    const S = p.glb; g.updateMatrixWorld(true);
+    worldP(S.arm[side].up, out); return g.worldToLocal(out);
+  }
+  const _pa = new THREE.Vector3(), _pb = new THREE.Vector3();
+  function palm(g, p, side, out, k){
+    const S = p.glb, a = S.arm[side]; g.updateMatrixWorld(true);
+    worldP(a.hand, out); g.worldToLocal(out);
+    worldP(a.fore, _pa); g.worldToLocal(_pa);
+    _pb.copy(out).sub(_pa); const l = _pb.length() || 1;
+    return out.addScaledVector(_pb, (k === undefined ? S.palm : k) / l);
+  }
+  // hướng cẳng tay (khuỷu → cổ tay), hệ toạ độ nhóm: IK dùng để biết cánh tay đang chỉ đâu
+  function foreDir(g, p, side, out){
+    const S = p.glb, a = S.arm[side]; g.updateMatrixWorld(true);
+    worldP(a.hand, out); g.worldToLocal(out); worldP(a.fore, _pa); g.worldToLocal(_pa);
+    return out.sub(_pa).normalize();
   }
 
   // điểm thấp nhất của cơ thể (toạ độ cục bộ của g, chưa nhân scale) – dùng cho tư thế ngồi xếp bằng
@@ -332,5 +413,5 @@ const GLBChar = (() => {
     const m = models[key] = { cfg, state:'loading', scene:null, fit:null };
     prepare(m, scene); m.state = 'ready'; return m;
   }
-  return { preload, ready, onReady, fail, attach, sync, makeDriver, lowestY, inject, models, classify };
+  return { preload, ready, onReady, fail, attach, sync, shoulder, palm, foreDir, makeDriver, lowestY, inject, models, classify };
 })();

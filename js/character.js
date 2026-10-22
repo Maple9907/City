@@ -483,37 +483,27 @@ const GChar = (() => {
   // Cần gắn vào cẳng tay phải (foreR) nên đi theo tay. Phao nằm theo TOẠ ĐỘ THẾ GIỚI trên mặt nước (ud.fishTarget):
   // lúc quăng, phao rời đầu cần ở T_RELEASE rồi bay theo đường vòng cung; chỉ khi phao CHẠM NƯỚC mới đặt ud.castLanded = true
   // (game.js thấy cờ này mới tính là đã quăng: trừ mồi + bắt đầu chờ cá). Dây vẽ mỗi khung từ đầu cần tới phao.
+  // Hình học cần (đơn vị nhóm, trước scale): sR = chỗ tay phải nắm (dọc cán, tính từ đuôi) · sL = chỗ tay trái nắm đuôi cần ·
+  // reel = tâm máy câu (so với trục cần) · knob = núm quay (x lệch sang −X vì tay TRÁI quay máy; r = bán kính quay quanh tâm máy)
   const RODS = {
-    1: { tipY: 0.06, tipZ: 2.92, dist: 5.2 },
-    2: { tipY: 0.07, tipZ: 3.60, dist: 6.6 }
+    1: { tipY: 0.06, tipZ: 2.92, dist: 5.2, sR: 0.50, sL: 0.20, reel:{ y:-0.15, z:0.22 }, knob:{ x:-0.20, r:0.15 } },
+    2: { tipY: 0.07, tipZ: 3.60, dist: 6.6, sR: 0.68, sL: 0.28, reel:{ y:-0.20, z:0.40 }, knob:{ x:-0.30, r:0.17 } }
   };
   const T_RELEASE = 0.52;     // giây kể từ lúc vào pose 'cast': buông dây
-  const T_REEL = 1.1;         // giây: kéo phao (+cá) từ mặt nước lên đầu cần
-  // [t, tay phải.x, cẳng tay phải.x, tay phải.z, ngả thân, tay trái.x, cẳng tay trái.x, đùi trước, đùi sau]
-  const CAST_KEYS = [
-    [0.00, -0.10, -0.30, -0.35,  0.08, -0.40,  0.11, -0.12,  0.05],   // tư thế chờ
-    [0.30, -1.60,  0.05, -0.35, -0.18, -1.60, -0.07, -0.34,  0.16],   // 2 · dồn về chân sau, cần ra sau qua vai
-    [0.52, -0.65, -0.10, -0.45,  0.18, -0.91,  0.17, -0.34,  0.02],   // 3 · vung tới, buông dây (cần ~45°)
-    [0.80, -0.45, -0.45, -0.40,  0.14, -0.70,  0.05, -0.26,  0.06],   // theo đà
-    [1.10, -0.10, -0.30, -0.35,  0.08, -0.40,  0.11, -0.12,  0.05]    // về tư thế chờ
-  ];
-  const _cp = [0, 0, 0, 0, 0, 0, 0, 0];
+  // Mốc thời gian pha 'reel' (= trạng thái 'caught' của Fishing, tổng FISH_T.total giây): ghì cá dưới nước → nhấc cá lên tay → giơ chiến thắng
+  const FISH_T = { fight:1.0, hoist:1.55, lift:1.9, land:2.1, win:2.5, total:3.0 };
   const smooth = x => x*x*(3 - 2*x);
-  function castPose(t){
-    const K = CAST_KEYS; let i = 0;
-    while(i < K.length - 2 && t > K[i+1][0]) i++;
-    const a = K[i], b = K[i+1], u = smooth(Math.max(0, Math.min(1, (t - a[0])/(b[0] - a[0]))));
-    for(let k = 0; k < 8; k++) _cp[k] = a[k+1] + (b[k+1] - a[k+1])*u;
-    return _cp;
-  }
 
   function buildRod(tier){
-    const rod = T(); rod.name = 'rod' + tier;
+    const rod = T(); rod.name = 'rod' + tier; let crank = null;
     if(tier === 1){
       cyl(rod, 0.055, 0.085, 1.45, 0x8a5a32, 0, 0, 0.72, PI/2, 0, 0);        // cán gỗ
       cyl(rod, 0.030, 0.055, 1.475, 0xa87b4a, 0, 0.05, 2.1825, PI/2, 0, 0); // thân tre nối liền cán
       cyl(rod, 0.11, 0.11, 0.15, 0x4a5568, 0, -0.15, 0.22, PI/2, 0, 0);       // cuộn nhựa nhỏ
-      cyl(rod, 0.04, 0.04, 0.20, 0xd8d2c4, 0, -0.15, 0.22, 0, 0, PI/2);       // tay quay
+      crank = T(); crank.position.set(0, -0.15, 0.22); rod.add(crank);        // tay quay (xoay quanh trục X khi thu cá)
+      cyl(crank, 0.03, 0.03, 0.20, 0xd8d2c4, -0.10, 0, 0, 0, 0, PI/2);
+      cyl(crank, 0.025, 0.025, 0.15, 0xd8d2c4, -0.20, 0.075, 0, 0, 0, 0);
+      sph(crank, 0.05, 0xd8d2c4, -0.20, 0.15, 0, 1, 1, 1, 6);
       tor(rod, 0.065, 0.016, 0x6b7280, 0, -0.03, 1.40, 0, 0, 0);              // 2 khoen sắt
       tor(rod, 0.05, 0.014, 0x6b7280, 0, 0.0, 2.55, 0, 0, 0);
     } else {
@@ -524,8 +514,10 @@ const GChar = (() => {
       [1.55, 2.05, 2.55].forEach(z => cyl(rod, 0.05, 0.05, 0.07, 0xc0392b, 0, 0.04, z, PI/2, 0, 0));   // dải quấn đỏ
       cyl(rod, 0.19, 0.19, 0.12, 0xc9ced6, 0, -0.20, 0.40, PI/2, 0, 0);       // cuộn bạc lớn
       cyl(rod, 0.15, 0.15, 0.17, 0xe0b84a, 0, -0.20, 0.40, PI/2, 0, 0);       // ống chỉ vàng
-      cyl(rod, 0.035, 0.035, 0.30, 0xe0b84a, 0.20, -0.20, 0.40, 0, 0, PI/2);  // tay quay vàng
-      sph(rod, 0.07, 0xe0b84a, 0.36, -0.20, 0.40, 1, 1, 1, 8);                // núm quay
+      crank = T(); crank.position.set(0, -0.20, 0.40); rod.add(crank);        // tay quay vàng (về phía −X cho tay trái, xoay được)
+      cyl(crank, 0.035, 0.035, 0.30, 0xe0b84a, -0.15, 0, 0, 0, 0, PI/2);
+      cyl(crank, 0.03, 0.03, 0.17, 0xe0b84a, -0.30, 0.085, 0, 0, 0, 0);
+      sph(crank, 0.07, 0xe0b84a, -0.30, 0.17, 0, 1, 1, 1, 8);
       [[1.40,0.095],[1.88,0.08],[2.34,0.066],[2.80,0.055],[3.25,0.046]].forEach(([z, r]) =>
         tor(rod, r, 0.016, 0xe0b84a, 0, 0.04 - (0.06 - (z-1.3)*0.0157) - r*0.8, z, 0, 0, 0));   // 5 khoen vàng giảm dần
       sph(rod, 0.042, 0xe0b84a, 0, 0.07, 3.60, 1, 1, 1, 8);                   // khoen đỉnh
@@ -538,10 +530,8 @@ const GChar = (() => {
     const tip = new THREE.Object3D();                                   // đầu cần (đi theo phần cong)
     tip.position.set(0, tier === 2 ? 0.07 : 0.06, (tier === 2 ? 3.60 : 2.92) - split);
     bend.add(tip);
-    rod.userData.bend = bend; rod.userData.tip = tip;
-    rod.rotation.set(-0.06, 0, 0);        // hơi ngẩng
-    rod.position.set(0, -0.5, 0.05);
-    rod.visible = false;
+    rod.userData.bend = bend; rod.userData.tip = tip; rod.userData.crank = crank;
+    rod.visible = false;       // vị trí + hướng cần đặt MỖI KHUNG theo bàn tay (updateGear), không gắn cứng vào xương nào
     return rod;
   }
   function buildFloat(tier){
@@ -563,7 +553,7 @@ const GChar = (() => {
     if(!p.foreR) return;
     p.rods = {}; p.floats = {};
     [1, 2].forEach(tier => {
-      p.rods[tier] = buildRod(tier); (p.glb && p.glb.rodAnchor || p.foreR).add(p.rods[tier]);
+      p.rods[tier] = buildRod(tier); g.add(p.rods[tier]);
       p.floats[tier] = buildFloat(tier); g.add(p.floats[tier]);
     });
     const lineMat = new THREE.MeshBasicMaterial({ color:0xf2efe2, transparent:true, opacity:0.85 });
@@ -580,7 +570,8 @@ const GChar = (() => {
     });
   }
   const _tipW = new THREE.Vector3(), _fl = new THREE.Vector3(), _tg = new THREE.Vector3(), _end = new THREE.Vector3(),
-        _ctl = new THREE.Vector3(), _dir = new THREE.Vector3(), _loc = new THREE.Vector3(), _UP = new THREE.Vector3(0,1,0), _ft = new THREE.Vector3();
+        _ctl = new THREE.Vector3(), _dir = new THREE.Vector3(), _loc = new THREE.Vector3(), _UP = new THREE.Vector3(0,1,0), _ft = new THREE.Vector3(),
+        _pr = new THREE.Vector3(), _hl = new THREE.Vector3();
   const _pts = [0, 1, 2, 3, 4].map(() => new THREE.Vector3());
   function hideGear(p){
     p.rods[1].visible = p.rods[2].visible = false; p.floats[1].visible = p.floats[2].visible = false;
@@ -602,6 +593,14 @@ const GChar = (() => {
     const env = (typeof Island !== 'undefined') ? Island : null;
     const wy = (env ? env.WATER_Y : -0.35) + 0.02 - (ud.gy || 0);          // mặt nước trong hệ toạ độ tạm
     g.updateMatrixWorld(true);
+    // cần câu = vật cứng: cán đi qua lòng bàn tay phải THẬT (sau sync xương) theo hướng của pose; máy câu xoay theo ud._crank
+    if(ud._rf){
+      const rf = ud._rf; palmPos(g, p, 'R', _pr);
+      rod.position.copy(_pr).addScaledVector(rf.Z, -R.sR);
+      _km.makeBasis(rf.X, rf.Y, rf.Z); rod.quaternion.setFromRotationMatrix(_km);
+      if(rod.userData.crank) rod.userData.crank.rotation.x = ud._crank || 0;
+      g.updateMatrixWorld(true);
+    }
     if(rod.userData.bend) rod.userData.bend.rotation.x = ud.rodBend || 0; // cần uốn cong khi dìu cá
     if(rod.userData.tip) rod.userData.tip.getWorldPosition(_tipW);        // đầu cần (bám theo phần đã cong)
     else { _tipW.set(0, R.tipY, R.tipZ); rod.localToWorld(_tipW); }
@@ -632,10 +631,17 @@ const GChar = (() => {
         sag = u < 1 ? 0.10 : 0.22;
         if(u >= 1){ if(!ud.castLanded){ ud.castLanded = true; ud._splash = 0; } onWater = true; }   // CHẠM NƯỚC → mới tính
       }
-    } else if(a === 'reel'){                                               // kéo phao + cá lên đầu cần
-      const u = smooth(Math.min(1, t / T_REEL));
-      F.set(tg.x + (_tipW.x - tg.x)*u, tg.y + (_tipW.y - 0.35 - tg.y)*u + Math.sin(u*PI)*0.6, tg.z + (_tipW.z - tg.z)*u);
-      sag = 0.05*(1 - u); onWater = u < 0.15;
+    } else if(a === 'reel'){                                               // cá bị ghì dưới nước → nhấc khỏi mặt nước vào tay trái → giơ cao
+      g.localToWorld(_loc.set(0, 0, 0));                                   // vị trí người câu (thế giới)
+      const u0 = smooth(Math.min(1, t/FISH_T.fight))*0.12;                // cá bơi lại gần người một chút khi bị ghì
+      _ft.set(tg.x + (_loc.x - tg.x)*u0, tg.y + 0.03, tg.z + (_loc.z - tg.z)*u0);
+      if(t < FISH_T.fight){ F.copy(_ft); F.y += Math.abs(Math.sin(t*11))*0.06; sag = 0.04; onWater = true; }
+      else {
+        const u = smooth(Math.min(1, (t - FISH_T.fight)/(FISH_T.lift - FISH_T.fight)));
+        palmPos(g, p, 'L', _hl); g.localToWorld(_hl);                      // tay trái đón cá (hoặc giơ cá lên ở pha chiến thắng)
+        F.copy(_ft).lerp(_hl, u); F.y += Math.sin(u*PI)*0.55 + (u >= 1 ? Math.sin(time*9)*0.012 : 0);
+        sag = 0.04*(1 - u); onWater = u < 0.12;
+      }
     } else if(out){                                                        // 'fish' (chờ) / 'bite' (cá đớp): phao nằm trên mặt nước
       const dip = a === 'bite' ? Math.abs(Math.sin(t*9))*0.16 : -Math.sin(time*1.6)*0.015;
       F.set(tg.x, tg.y + 0.03 - dip, tg.z);
@@ -694,8 +700,101 @@ const GChar = (() => {
     } else { ring0.visible = false; ring1.visible = false; }
   }
 
+  // ====================== IK 2 XƯƠNG (tay · chân) ======================
+  // Mỗi pose chỉ cần nói "bàn tay ở ĐÂU / bàn chân ở ĐÂU / gối hướng về ĐÂU" (hệ toạ độ nhóm, trước scale); phần dưới tự tính góc quay
+  // của các pivot (vai, khuỷu, hông, gối). Kích thước đùi/cẳng/tay/vai/hông lấy từ chính model (GLBChar.measureDims) nên cùng một pose
+  // đúng cho cả 12 nhân vật (nam to, nữ nhỏ). Pivot là bản lề chỉ gập 1 chiều (khuỷu gập ra trước, gối gập ra sau) → không bao giờ bẻ ngược.
+  const v3 = (x, y, z) => new THREE.Vector3(x, y, z);
+  const DIMS_B = { hip:{ L:v3(-0.3, 1.2, 0), R:v3(0.3, 1.2, 0) }, shoulder:{ L:v3(-0.66, 2.2, 0), R:v3(0.66, 2.2, 0) },
+    thigh:0.62, shin:0.5, upper:0.5, fore:0.58, hipW:0.6, shoulderW:1.32, ankleH:0.12, toeLen:0.4 };   // bản dựng khối (không có xương GLB)
+  const dimsOf = p => (p.glb && p.glb.dims) || DIMS_B;
+  const palmOf = p => p.glb ? p.glb.palm : 0;
+  const K = { u:v3(0,0,0), pp:v3(0,0,0), J:v3(0,0,0), E:v3(0,0,0), d1:v3(0,0,0), d2:v3(0,0,0), X:v3(0,0,0), Y:v3(0,0,0), Z:v3(0,0,0), b:v3(0,0,0),
+              S:v3(0,0,0), T:v3(0,0,0), P:v3(0,0,0) };
+  const _km = new THREE.Matrix4(), _ke = new THREE.Euler(0, 0, 0, 'XYZ'), _kq = new THREE.Quaternion();
+  const AXY = v3(0, 1, 0);
+
+  // Tìm khuỷu/gối J cho chuỗi 2 xương S→J→E (dài L1, L2) sao cho E chạm T (hoặc gần nhất có thể); pole = hướng khuỷu/gối "nhô" ra.
+  function solve2(S, T, L1, L2, pole){
+    const u = K.u.copy(T).sub(S), len = u.length() || 1e-6; u.multiplyScalar(1 / len);
+    const d = Math.min((L1 + L2) * 0.9995, Math.max(Math.abs(L1 - L2) + 0.02, len));
+    const a = (L1 * L1 - L2 * L2 + d * d) / (2 * d), h = Math.sqrt(Math.max(0, L1 * L1 - a * a));
+    const pp = K.pp.copy(pole); pp.addScaledVector(u, -pp.dot(u));
+    if(pp.lengthSq() < 1e-8){ pp.set(0, 0, 1).addScaledVector(u, -u.z); if(pp.lengthSq() < 1e-8) pp.set(1, 0, 0); }
+    pp.normalize();
+    K.J.copy(S).addScaledVector(u, a).addScaledVector(pp, h);
+    K.E.copy(S).addScaledVector(u, d);
+    K.d1.copy(K.J).sub(S).normalize(); K.d2.copy(K.E).sub(K.J).normalize();
+    return len;
+  }
+  // Đặt 2 pivot (trên, dưới) để xương trên chỉ theo d1, xương dưới chỉ theo d2. Bản lề: tay gập khuỷu ra trước (θ<0), chân gập gối ra sau (θ>0).
+  // Trục X cục bộ của pivot = trục bản lề (vuông góc mặt phẳng d1–d2); Z cục bộ = hướng "phía trước" của mu bàn tay / mũi chân.
+  function applyChain(up, lo, d1, d2, leg, roll){
+    const Y = K.Y.copy(d1).negate(), c = Math.max(-1, Math.min(1, d1.dot(d2))), phi = Math.acos(c);
+    const b = K.b.copy(d2).addScaledVector(d1, -c);
+    if(b.lengthSq() < 1e-8){ b.set(0, 0, 1).addScaledVector(d1, -d1.z); if(b.lengthSq() < 1e-8) b.set(1, 0, 0); if(leg) b.negate(); }
+    b.normalize();
+    const Z = K.Z.copy(b); if(leg) Z.negate();
+    const X = K.X.crossVectors(Y, Z).normalize();
+    up.quaternion.setFromRotationMatrix(_km.makeBasis(X, Y, Z));
+    _ke.set(leg ? phi : -phi, roll || 0, 0, 'XYZ'); lo.quaternion.setFromEuler(_ke);
+    up.rotation.setFromQuaternion(up.quaternion); lo.rotation.setFromQuaternion(lo.quaternion);
+  }
+  // vai thật (hệ nhóm): model GLB → vị trí xương (đi theo thân khi nghiêng, cần sync trước); bản khối → xoay vị trí vai quanh hông theo thân
+  function shoulderPos(g, p, side, out){
+    if(p.glb) return GLBChar.shoulder(g, p, side, out);
+    const rest = DIMS_B.shoulder[side], hip = p.body.position;
+    out.copy(rest).sub(hip).applyQuaternion(p.body.quaternion).add(hip);
+    p['arm' + side].position.copy(out); return out;
+  }
+  // tay: lòng bàn tay chạm T. pole = hướng khuỷu nhô ra. roll = xoắn cẳng tay (rad) để lật lòng bàn tay.
+  function armTo(g, p, side, T, pole, roll){
+    const D = dimsOf(p), S = shoulderPos(g, p, side, K.S);
+    const reach = solve2(S, T, D.upper, D.fore + palmOf(p), pole);
+    applyChain(p['arm' + side], p['fore' + side], K.d1, K.d2, false, roll);
+    return reach;
+  }
+  function legTo(p, side, A, pole){                       // cổ chân chạm A (hệ nhóm)
+    const D = dimsOf(p);
+    const reach = solve2(D.hip[side], A, D.thigh, D.shin, pole);
+    applyChain(p['leg' + side], p['shin' + side], K.d1, K.d2, true, 0);
+    return reach;
+  }
+  function legDirs(p, side, d1, d2){ applyChain(p['leg' + side], p['shin' + side], d1, d2, true, 0); }   // đặt thẳng hướng đùi + cẳng (không IK)
+  // bàn chân (xương GLB): quaternion thế giới so với tư thế nghỉ (nghỉ = bàn chân phẳng, mũi chỉ thẳng tới trước)
+  function setFoot(p, side, yaw, pitch){
+    if(!p.footD) p.footD = {};
+    _ke.set(pitch || 0, yaw || 0, 0, 'YXZ'); (p.footD[side] || (p.footD[side] = new THREE.Quaternion())).setFromEuler(_ke);
+  }
+  const sideSign = side => side === 'R' ? 1 : -1;
+
+  // Tư thế ngồi: hông cao `hipH` so với mặt sàn/ghế đặt chân. Gối mở theo hông của từng model (hơi rộng hơn hông, KHÔNG xoè),
+  // góc gối ≈ beta độ, độ chúi của đùi tự tính để bàn chân đặt PHẲNG trên sàn. Trả về hướng đùi để đặt tay lên đùi.
+  const SEAT = { d1:{ L:v3(0,0,1), R:v3(0,0,1) }, d2:{ L:v3(0,-1,0), R:v3(0,-1,0) }, top:{ L:v3(), R:v3() } };
+  function legsSeated(p, hipH, o){
+    o = o || {};
+    const D = dimsOf(p), T = D.thigh, S = D.shin, beta = (o.beta || 95) * PI/180, c = PI - beta;
+    const dy = hipH - D.ankleH, R = Math.hypot(T + S*Math.cos(c), S*Math.sin(c)), ph = Math.atan2(S*Math.sin(c), T + S*Math.cos(c));
+    const delta = Math.asin(Math.max(-1, Math.min(1, dy / R))) - ph;               // đùi chúc xuống delta (≈0: nằm ngang)
+    const kneeW = Math.min(D.shoulderW, D.hipW * (o.kneeK || 1.4) + (o.kneeAdd || 0.04));
+    const alpha = Math.asin(Math.max(0, Math.min(0.4, (kneeW - D.hipW) / (2 * T * Math.cos(delta)))));
+    const gam = delta + c, cd = Math.cos(delta);
+    ['L', 'R'].forEach(sd => {
+      const sx = sideSign(sd), d1 = SEAT.d1[sd], d2 = SEAT.d2[sd];
+      d1.set(sx * Math.sin(alpha) * cd, -Math.sin(delta), Math.cos(alpha) * cd);
+      d2.set(0, -Math.sin(gam), Math.cos(gam));                                    // cẳng thẳng dưới gối (bàn chân ngay dưới đầu gối)
+      legDirs(p, sd, d1, d2);
+      SEAT.top[sd].copy(D.hip[sd]);
+      setFoot(p, sd, sx * alpha * 0.8, o.toeDown && sd === o.toeSide ? o.toeDown : 0);
+    });
+    return { alpha, delta, kneeW };
+  }
+
   // ====================== ANIMATION ======================
   const wrap = a => Math.atan2(Math.sin(a), Math.cos(a));
+  const HIP_Y = 1.2;                         // độ cao hông của rig (cùng GLBChar)
+  const SIDES = ['L', 'R'];
+  const IKP = v3(0, 0, 0), IKQ = v3(0, 0, 0);
   // Các pivot có thể bị động tác ghi đè — dùng để trộn mượt khi đổi động tác (không bị giật tay khi vào câu / quăng cần / ngồi)
   const ACT_PARTS = ['body','head','armL','armR','foreL','foreR','legL','legR','shinL','shinR'];
   const _qb = new THREE.Quaternion();
@@ -716,6 +815,147 @@ const GChar = (() => {
       for(let i = 0; i < pos.count; i++){ _v.fromBufferAttribute(pos, i).applyMatrix4(_m); if(_v.y < low) low = _v.y; }
     }));
     return low;
+  }
+
+  // ---- IK tay theo từng pose (chạy sau khi thân + chân đã đặt) ----
+  function ikSit(g, p){
+    const D = dimsOf(p), thR = D.hipW*0.42 + 0.02;
+    for(let i = 0; i < 2; i++){
+      const sd = SIDES[i], sx = sideSign(sd), d1 = SEAT.d1[sd];
+      IKP.copy(D.hip[sd]).addScaledVector(d1, D.thigh*0.62); IKP.y += thR + 0.03; IKP.x -= sx*0.02;       // mu bàn tay úp lên mặt đùi
+      armTo(g, p, sd, IKP, IKQ.set(sx*0.9, -0.1, -0.6), -sx*0.9);
+    }
+  }
+  // "Chỉnh ghế" theo từng model: trượt ghế dọc trục xe (đơn vị thế giới, + = tiến lên) sao cho khoảng cách vai → vô-lăng / yoke làm khuỷu gập
+  // tự nhiên (xe ≈ 115°, máy bay ≈ 135°) dù tay dài hay ngắn, vai cao hay thấp. Kết quả lưu ở ud.rideShift; game.js cộng vào ghế (riding.seat.z).
+  function rideSlide(p, mode, sc){
+    const R = Vehicles.RIDE[mode], D = dimsOf(p), L1 = D.upper, L2 = D.fore + palmOf(p), th = (mode === 'plane' ? 135 : 115) * PI/180;
+    const want2 = L1*L1 + L2*L2 - 2*L1*L2*Math.cos(th);
+    let sum = 0;
+    for(let i = 0; i < 2; i++){
+      const sd = SIDES[i], S = D.shoulder[sd];
+      Vehicles.grip(mode, sd, 0, 0, IKQ);
+      const dx = (IKQ.x - R.seat.x)/sc - S.x, dy = (IKQ.y - (R.seat.y - 0.6))/sc - S.y;
+      sum += (IKQ.z - R.seat.z)/sc - S.z - Math.sqrt(Math.max(0, want2 - dx*dx - dy*dy));
+    }
+    return Math.max(-0.12, Math.min(0.06, sum*0.5*sc));
+  }
+  function ikRide(g, p, ud){
+    const mode = ud.rideMode, R = Vehicles.RIDE[mode], sc = g.scale.y, steer = Math.max(-1, Math.min(1, Number(ud.vehicleSteer) || 0)), pitch = Number(ud.vehiclePitch) || 0;
+    const seatZ = R.seat.z + (ud.rideShift || 0);
+    for(let i = 0; i < 2; i++){
+      const sd = SIDES[i], sx = sideSign(sd);
+      Vehicles.grip(mode, sd, steer, pitch, IKP);
+      IKP.x -= R.seat.x; IKP.y -= R.seat.y - 0.6; IKP.z -= seatZ; IKP.multiplyScalar(1/sc);                  // hệ toạ độ xe → hệ nhóm (trước scale)
+      armTo(g, p, sd, IKP, IKQ.set(sx*0.9, -0.6, -0.3), mode === 'plane' ? (-sx*1.3) : -sx*0.35);
+    }
+  }
+  // ====================== CÂU CÁ · 7 PHA BẰNG IK ======================
+  // Mỗi tư thế = một mảng tham số (FI) rồi nội suy giữa các tư thế chuẩn theo thời gian:
+  //   rx,ry,rz : lòng bàn tay PHẢI (tay cầm cần) so với vai phải, đơn vị "độ dài tay" ρ (rx ra ngoài · ry lên · rz ra trước) → mọi model cùng khuỷu gập như nhau
+  //   pit,yaw,roll : hướng cần (độ): ngẩng lên · lệch ra ngoài · xoay quanh trục cần   bend : độ cong thân cần (rad)
+  //   lean,twist,headX : thân ngả (+ ra trước) · thân xoay (+ vai cầm cần lùi sau) · cúi đầu (độ)
+  //   kF,kB : góc gối chân TRƯỚC (đối diện tay cầm cần) / chân SAU (độ) · stance : khoảng cách hai bàn chân × bề vai · fz : bước chân trước tối thiểu · hop : nhún bật (thế giới)
+  //   lx,ly,lz : tay TRÁI tự do so với vai trái (lx ra ngoài) · wC / wB : tay trái nắm núm quay máy / đuôi cần (phần còn lại = tự do) · gL,gR : độ nắm các ngón
+  const FI = { rx:0, ry:1, rz:2, pit:3, yaw:4, roll:5, bend:6, lean:7, twist:8, headX:9, kF:10, kB:11, stance:12, fz:13, hop:14, lx:15, ly:16, lz:17, wC:18, wB:19, gL:20, gR:21 };
+  const NF = 22, D2R = PI/180;
+  const mkP = o => { const a = new Array(NF).fill(0); for(const k in o) a[FI[k]] = o[k]; return a; };
+  const POSE = {
+    // 1 · đi bộ / đứng cầm cần: cần ngẩng 42-52°, chéo ra ngoài hông ~15-18°, trọng tâm hạ ~5% (gối khuỵu nhẹ), tay trái buông lỏng
+    carry: mkP({ rx:0.20, ry:-0.50, rz:0.40, pit:42, yaw:14, bend:0.03, lean:4, headX:6, lx:0.12, ly:-0.85, lz:0, gR:0.85, gL:0.2 }),
+    walk:  mkP({ rx:0.20, ry:-0.60, rz:0.42, pit:52, yaw:18, bend:0.02, lean:3, headX:6, lx:0.12, ly:-0.85, lz:0, gR:0.85, gL:0.2 }),
+    // 4 · chờ cá: hai chân rộng bằng vai, gối thả lỏng ~164° (nhún theo nhịp thở), cần ngẩng 20-30° về mặt nước, tay trái trên tay quay máy, mắt dõi phao
+    ready: mkP({ rx:0.18, ry:-0.40, rz:0.46, pit:32, yaw:8, bend:0.04, lean:6, headX:10, kF:162, kB:162, stance:1.0, wC:1, gL:0.7, gR:0.85 }),
+    wait:  mkP({ rx:0.18, ry:-0.40, rz:0.46, pit:25, yaw:8, bend:0.04, lean:6, headX:12, kF:164, kB:164, stance:1.0, wC:1, gL:0.7, gR:0.85 }),
+    // 2 · chuẩn bị quăng: chân đối diện bước nửa bước lên, hai bàn chân 1,2× vai, gối 150-160°, cần ngả ra sau qua vai (đầu cần cong), tay trái đỡ đuôi cần
+    back:  mkP({ rx:0.08, ry:0.02, rz:0.36, pit:115, yaw:5, bend:0.20, lean:-10, twist:22, headX:0, kF:166, kB:150, stance:1.2, fz:0.22, wB:1, gL:0.8, gR:0.9 }),
+    // 3 · quăng: dồn lực chân sau → chân trước (gối trước gập), cần vung tới dừng ~45° về phía mặt nước
+    rel:   mkP({ rx:0.15, ry:-0.05, rz:0.62, pit:45, yaw:8, bend:0.08, lean:12, twist:-18, headX:10, kF:140, kB:172, stance:1.2, fz:0.30, wB:0.3, lx:-0.40, ly:-0.55, lz:0.40, gL:0.5, gR:0.8 }),
+    follow:mkP({ rx:0.18, ry:-0.30, rz:0.50, pit:40, yaw:8, bend:0.04, lean:8, twist:-8, headX:10, kF:150, kB:168, stance:1.1, fz:0.25, wC:0.6, lx:-0.40, ly:-0.55, lz:0.40, gL:0.6, gR:0.85 }),
+    // 5 · giật cần: hai gối hạ nhanh xuống 130-140°, hai tay giật cần ngược ra sau qua vai, thân ngửa
+    hook:  mkP({ rx:0.04, ry:-0.02, rz:0.42, pit:95, yaw:6, bend:0.30, lean:-14, twist:8, headX:-6, kF:135, kB:138, stance:1.05, wB:0.8, wC:0.2, gL:0.8, gR:0.9 }),
+    // 6 · dìu cá: gối là giảm xóc, thân ngả sau, đuôi cần tì vào đùi/hông, cần cong như cánh cung, tay trái quay máy
+    fight: mkP({ rx:0.00, ry:-0.28, rz:0.36, pit:55, yaw:4, bend:0.32, lean:-12, twist:4, headX:8, kF:150, kB:150, stance:1.05, fz:0.1, wC:1, gL:0.75, gR:0.9 }),
+    hoist: mkP({ rx:0.06, ry:-0.15, rz:0.42, pit:68, yaw:2, bend:0.22, lean:-12, twist:0, headX:6, kF:148, kB:152, stance:1.1, fz:0.12, lx:-0.30, ly:-0.45, lz:0.62, wC:0.4, gL:0.4, gR:0.9 }),
+    // 7 · bắt cá: gối trước khuỵu sâu, nâng cao cần, tay trái thò xuống đón cá → rồi giơ cả cần lẫn cá lên (tư thế chiến thắng)
+    land:  mkP({ rx:0.20, ry:0.05, rz:0.52, pit:78, yaw:6, bend:0.15, lean:4, twist:-6, headX:14, kF:112, kB:152, stance:1.15, fz:0.30, lx:-0.25, ly:-0.42, lz:0.72, gL:0.35, gR:0.9 }),
+    win:   mkP({ rx:0.35, ry:0.55, rz:0.25, pit:72, yaw:10, bend:0.12, lean:-6, twist:-6, headX:-4, kF:170, kB:170, stance:1.0, lx:0.40, ly:0.42, lz:0.22, gL:0.9, gR:0.9 })
+  };
+  const cpP = (a, o) => { for(let i = 0; i < NF; i++) o[i] = a[i]; return o; };
+  const lerpP = (a, b, u, o) => { for(let i = 0; i < NF; i++) o[i] = a[i] + (b[i] - a[i])*u; return o; };
+  const seqP = (K, t, o) => {
+    let i = 0; while(i < K.length - 2 && t > K[i + 1][0]) i++;
+    const a = K[i], b = K[i + 1]; return lerpP(a[1], b[1], smooth(Math.max(0, Math.min(1, (t - a[0])/(b[0] - a[0])))), o);
+  };
+  const CAST_K = [[0, POSE.ready], [0.30, POSE.back], [0.52, POSE.rel], [0.80, POSE.follow], [1.10, POSE.wait]];
+  const REEL_K = [[0, POSE.fight], [FISH_T.fight, POSE.fight], [FISH_T.hoist, POSE.hoist], [FISH_T.land, POSE.land], [FISH_T.win, POSE.win], [FISH_T.total, POSE.win]];
+  const FS = new Array(NF).fill(0);                                     // tư thế câu cá của khung hiện tại (dùng chung cho update → ikFish)
+  function fishPose(a, t, mv, ws, tt){
+    const o = FS;
+    if(a === 'rod') lerpP(POSE.carry, POSE.walk, mv, o), o[FI.lz] += -ws*0.35*mv;           // tay trái đung đưa theo nhịp bước
+    else if(a === 'fish') cpP(POSE.wait, o);
+    else if(a === 'cast') seqP(CAST_K, t, o);
+    else if(a === 'bite'){
+      const k = t < 0.12 ? t/0.12 : Math.max(0, 1 - (t - 0.12)/0.55);                       // 0,12s bật gối + giật cần, rồi từ từ trả về
+      lerpP(POSE.wait, POSE.hook, k, o); o[FI.bend] += Math.sin(t*22)*0.03*k;
+    } else {
+      seqP(REEL_K, t, o);
+      const fw = Math.max(0, Math.min(1, (FISH_T.hoist - t)/(FISH_T.hoist - FISH_T.fight)));
+      const rk = Math.max(0, 1 - t/FISH_T.fight), pull = Math.sin(t*11)*(0.35 + 0.65*rk)*fw;   // cá mệt dần (rk→0): giật yếu đi
+      const up = (1 - rk)*10*fw, dn = 14*Math.max(0, pull);                                    // gối sâu hơn khi cá giật, nâng lên khi cá mệt
+      o[FI.kF] += up - dn; o[FI.kB] += up - dn*0.7;
+      o[FI.bend] += 0.10*Math.abs(pull); o[FI.ry] += pull*0.04*fw; o[FI.lean] -= 3*Math.max(0, pull)*fw;
+      if(t > FISH_T.land + 0.05) o[FI.hop] = Math.abs(Math.sin((t - FISH_T.land - 0.05)*6.5))*0.05*Math.max(0, Math.min(1, (FISH_T.total - t)/0.25));   // nhún nhảy mừng
+    }
+    return o;
+  }
+  // Hai chân đứng bằng IK: chân trước (L) / chân sau (R) đặt đúng góc gối kF, kB; hạ hông xuống tự tính để bàn chân VẪN chạm đất.
+  const _fa = v3(0, 0, 0);
+  function fishLegs(group, p, P, bob){
+    const D = dimsOf(p), sc = group.scale.y, T = D.thigh, S = D.shin, H0 = (D.hip.L.y + D.hip.R.y)/2, fz = P[FI.fz];
+    const sep = Math.min(D.shoulderW, D.hipW*1.6)*P[FI.stance], dx = Math.abs(sep/2 - D.hipW/2);
+    const df2 = T*T + S*S - 2*T*S*Math.cos(P[FI.kF]*D2R), db2 = T*T + S*S - 2*T*S*Math.cos(P[FI.kB]*D2R);
+    const V = Math.min(Math.sqrt(Math.max(0, df2 - fz*fz - dx*dx)), Math.sqrt(Math.max(0, db2 - dx*dx)));          // hông cao hơn cổ chân bao nhiêu
+    const zf = Math.sqrt(Math.max(0, df2 - V*V - dx*dx)), zb = Math.sqrt(Math.max(0, db2 - V*V - dx*dx));          // chân trước tới trước, chân sau lùi sau
+    const drop = Math.max(0, H0 - D.ankleH - V) + bob;
+    group.position.y = -drop*sc;
+    for(let i = 0; i < 2; i++){
+      const sd = SIDES[i], sx = sideSign(sd), front = sd === 'L';
+      _fa.set(sx*sep/2, drop + D.ankleH, D.hip[sd].z + (front ? zf : -zb));
+      legTo(p, sd, _fa, IKQ.set(sx*0.2, 0.2, 1));
+      setFoot(p, sd, front ? -sx*0.05 : sx*0.3, 0);
+    }
+    return drop;
+  }
+  // khung cần (X = ngang, Y = "mặt trên" có khoen, Z = từ đuôi tới đầu cần). Tay phải nắm cán, tay trái theo wC/wB
+  const _rt = v3(0, 0, 0), _sR = v3(0, 0, 0), _sL = v3(0, 0, 0), _tR = v3(0, 0, 0), _tL = v3(0, 0, 0), _bt = v3(0, 0, 0), _kn = v3(0, 0, 0), _fr = v3(0, 0, 0);
+  function rodFrame(d, roll, X, Y, Z){
+    Z.copy(d); X.set(0, 1, 0).cross(Z); if(X.lengthSq() < 1e-4) X.set(1, 0, 0); X.normalize(); Y.crossVectors(Z, X);
+    if(roll){ const c = Math.cos(roll), s = Math.sin(roll); _fr.copy(X).multiplyScalar(c).addScaledVector(Y, s); Y.multiplyScalar(c).addScaledVector(X, -s); X.copy(_fr); }
+  }
+  function palmPos(g, p, side, out){                                      // lòng bàn tay thật (hệ nhóm)
+    if(p.glb) return GLBChar.palm(g, p, side, out);
+    p['fore' + side].updateWorldMatrix(true, false); out.set(0, -0.58, 0.02); p['fore' + side].localToWorld(out); return g.worldToLocal(out);
+  }
+  function ikFish(g, p, ud, P, dt){
+    const D = dimsOf(p), rho = (D.upper + D.fore + palmOf(p))/0.98, R = RODS[ud.rodTier === 2 ? 2 : 1];
+    const th = P[FI.pit]*D2R, ps = P[FI.yaw]*D2R, ct = Math.cos(th);
+    _rt.set(Math.sin(ps)*ct, Math.sin(th), Math.cos(ps)*ct);
+    if(!ud._rd) ud._rd = v3(0, 0, 0).copy(_rt);
+    ud._rd.lerp(_rt, 1 - Math.exp(-Math.min(dt, 0.05)*22)).normalize();                // hướng cần đổi mượt (không giật khi đổi pha)
+    const rf = ud._rf || (ud._rf = { X:v3(0, 0, 0), Y:v3(0, 0, 0), Z:v3(0, 0, 0) });
+    rodFrame(ud._rd, P[FI.roll]*D2R, rf.X, rf.Y, rf.Z);
+    shoulderPos(g, p, 'R', _sR); shoulderPos(g, p, 'L', _sL);
+    _tR.set(_sR.x + P[FI.rx]*rho, _sR.y + P[FI.ry]*rho, _sR.z + P[FI.rz]*rho);          // R = +X → ra ngoài = +x
+    _bt.copy(_tR).addScaledVector(rf.Z, -R.sR);                                          // đuôi cần
+    let wC = P[FI.wC], wB = P[FI.wB]; const wt = wC + wB; if(wt > 1){ wC /= wt; wB /= wt; }
+    const ph = ud._crank || 0;
+    _kn.copy(_bt).addScaledVector(rf.Z, R.reel.z).addScaledVector(rf.Y, R.reel.y).addScaledVector(rf.X, R.knob.x)
+       .addScaledVector(rf.Y, R.knob.r*Math.cos(ph)).addScaledVector(rf.Z, R.knob.r*Math.sin(ph));        // núm quay (xoay quanh trục máy)
+    _tL.set(_sL.x - P[FI.lx]*rho, _sL.y + P[FI.ly]*rho, _sL.z + P[FI.lz]*rho).multiplyScalar(1 - wC - wB);   // L = −X → ra ngoài = −x
+    _tL.addScaledVector(_kn, wC); _fr.copy(_bt).addScaledVector(rf.Z, R.sL); _tL.addScaledVector(_fr, wB);
+    armTo(g, p, 'R', _tR, IKQ.set(0.6, -1.0, -0.5), -1.3);
+    armTo(g, p, 'L', _tL, IKQ.set(-0.6, -1.0, -0.5), 0.9);
   }
   function update(group, dt, time){
     const ud = group.userData, p = ud.parts; if(!p) return;
@@ -760,6 +1000,7 @@ const GChar = (() => {
     p.eyeL.scale.y = bl; p.eyeR.scale.y = bl;
 
     // ----- hành động -----
+    let ik = null; p.footD = null; if(!p.grip) p.grip = { L:0, R:0 }; p.grip.L = p.grip.R = 0;                      // pose IK nào đang chạy (ikSit/ikRide/ikFish) · bàn chân do pose chỉ định
     // Đổi động tác (đứng → câu, chờ → cá cắn, quăng → chờ…): trộn 0.16s từ tư thế đang có sang tư thế mới
     // để cánh tay không bật một nấc. Ghi lại tư thế nền TRƯỚC khi khối động tác ghi đè.
     let blend = 1;
@@ -780,18 +1021,16 @@ const GChar = (() => {
         p.armL.rotation.set(-2.45*Math.sin(u*PI), 0, 0.46); p.armR.rotation.set(-2.45*Math.sin(u*PI), 0, -0.46);
         p.foreL.rotation.set(-0.32*Math.sin(u*PI), 0, 0.05); p.foreR.rotation.set(-0.32*Math.sin(u*PI), 0, -0.05);
       } else if(a === 'sit'){
-        // ngồi ghế: hông đúng mặt ghế, đùi ngang, cẳng chân thẳng xuống, tay đặt trên đùi
-        const br = Math.sin(tt*1.5)*0.010;                       // thở nhẹ khi ngồi
-        // Hạ gốc nhân vật: hông đặt đúng mặt ghế (cao 0.33) và bàn chân vẫn chạm mặt đất.
-        group.position.y = -0.32 + br;
-        // Đùi ngang + hai đầu gối mở rộng bằng vai và hướng thẳng ra trước (không chụm, không xoè quá).
-        p.legL.rotation.set(-1.53, 0, -0.40);  p.legR.rotation.set(-1.53, 0, 0.40);
-        // Cẳng chân dựng đứng → góc gối ~93°, bàn chân đặt phẳng hoàn toàn trên sàn.
-        p.shinL.rotation.set(1.52, 0, 0);      p.shinR.rotation.set(1.52, 0, 0);
-        p.armL.rotation.set(0.20, 0, 0.30);    p.armR.rotation.set(0.20, 0, -0.30);     // khuỷu hơi xoè ra ngoài để hai tay không chụm vào bụng
-        p.foreL.rotation.set(-0.50, 0, 0.06);  p.foreR.rotation.set(-0.50, 0, -0.06);   // cẳng tay gập vừa, bàn tay đặt lên đùi
-        p.body.rotation.set(0.08 + br, 0, 0);
-        p.head.rotation.set(-0.05, Math.sin(tt*0.7)*0.07, 0);
+        // Ngồi ghế đá: mặt ghế cao 0.33 (three-scene.js). Hông đặt sát mặt ghế, đùi gần nằm ngang song song nhau, hai gối mở bằng
+        // hông + chút ít (KHÔNG xoè, KHÔNG chụm), mũi gối hướng thẳng ra trước, gối ~95°, cẳng chân dựng đứng, bàn chân đặt PHẲNG trên sàn.
+        // Hai bàn tay úp lên đùi (IK, xem ikSit). Mọi số đo lấy theo từng model nên nam/nữ đều đúng.
+        const br = Math.sin(tt*1.5)*0.010, sc = group.scale.y, hipW = 0.33 + 0.075;     // hông cách sàn 0.405 (thế giới)
+        group.position.y = hipW - HIP_Y*sc + br;
+        p.body.rotation.set(0.05 + br, 0, 0);
+        p.head.rotation.set(-0.04, Math.sin(tt*0.7)*0.07, 0);
+        legsSeated(p, hipW/sc, { beta:95 });
+        p.grip.L = p.grip.R = 0.22;                                                    // bàn tay đặt lên đùi: các ngón hơi khum tự nhiên
+        ik = 'sit';
         if(p.tail) p.tail.rotation.set(0.35, 0, Math.sin(tt*1.2)*0.05);
       } else if(a === 'lotus'){
         // ngồi xếp bằng dưới đất: hông sát mặt đất, hai đầu gối dang ra, cẳng chân vắt chéo trước người
@@ -816,33 +1055,42 @@ const GChar = (() => {
         const speed = Math.min(1,Math.abs(Number(ud.vehicleSpeed)||0)/12);
         const br = Math.sin(tt*2.4)*0.008 + Math.sin(tt*18)*speed*0.004;
         group.position.y = br;
-        if(mode === 'car'){
-          // --- XE: đùi ngang, cẳng chân dựng đứng → bàn chân đặt phẳng trên sàn xe, gối mở ra hai bên ---
+        if((mode === 'car' || mode === 'plane') && typeof Vehicles !== 'undefined'){
+          // Lái xe / lái máy bay: hông đúng mặt ghế, bàn chân đặt phẳng trên sàn (xe) hoặc trên bàn đạp (máy bay), hai bàn tay NẮM đúng
+          // vô-lăng / tay cầm yoke (IK theo vị trí thật của vật điều khiển: Vehicles.grip), lưng thẳng, mắt nhìn phía trước.
+          const R = Vehicles.RIDE[mode], sc = group.scale.y, pitch = Number(ud.vehiclePitch) || 0;
+          const dm = dimsOf(p); if(!ud._slide || ud._slide.d !== dm || ud._slide.m !== mode) ud._slide = { d:dm, m:mode, s:rideSlide(p, mode, sc) };
+          ud.rideShift = ud._slide.s;                                                                  // chỉnh ghế theo kích thước model (game.js đọc để đặt ghế)
+          p.body.rotation.set(0.05 + br + (mode === 'plane' ? pitch*0.12 : 0), -steer*0.04, -steer*0.05);
+          p.head.rotation.set(-0.02 - (mode === 'plane' ? pitch*0.2 : 0), steer*0.10, -steer*0.02);
+          if(mode === 'car'){
+            legsSeated(p, (R.seat.y - 0.6 + HIP_Y*sc - R.floorY)/sc, { beta:95, toeDown:0.08 + speed*0.22, toeSide:'R' });   // chân phải hơi ấn ga theo tốc độ
+          } else {
+            // chân duỗi tới hai bàn đạp (gối hướng lên + ra trước), bàn chân nằm trên mặt bàn đạp
+            const D = dimsOf(p), P0y = R.seat.y - 0.6;
+            for(let i = 0; i < 2; i++){
+              const sd = SIDES[i], pd = R.pedals[i], sy = Math.cos(pd.tilt), sz = Math.sin(pd.tilt);
+              // mặt trên bàn đạp có pháp tuyến (0, cos, sin); gót chân cách bi bàn chân ~0.6 chiều dài bàn chân về phía sau; cổ chân cao hơn đế ankleH
+              IKP.set((pd.x - R.seat.x)/sc, (pd.y - P0y)/sc + 0.02, (pd.z - R.seat.z - ud.rideShift)/sc);
+              IKP.y += sy*D.ankleH; IKP.z += sz*D.ankleH;
+              IKP.y += sz*D.toeLen*0.6; IKP.z -= sy*D.toeLen*0.6;
+              // chân dài / ngắn: trượt cổ chân dọc tấm bàn đạp để gối gập ≈ 120° (không bị co quá hoặc duỗi thẳng)
+              const hp = D.hip[sd], dyy = IKP.y - hp.y, dxx = IKP.x - hp.x, wl = D.thigh*D.thigh + D.shin*D.shin + D.thigh*D.shin;   // cos120° = -1/2
+              const zT = hp.z + Math.sqrt(Math.max(0, wl - dyy*dyy - dxx*dxx));
+              IKP.z += Math.max(-0.12, Math.min(0.24, zT - IKP.z));
+              legTo(p, sd, IKP, IKQ.set(sideSign(sd)*0.15, 0.9, 0.6));
+              setFoot(p, sd, 0, pd.tilt);
+            }
+          }
+          p.grip.L = p.grip.R = mode === 'plane' ? 0.85 : 0.8;                           // nắm chặt vành vô-lăng / tay cầm yoke
+          ik = 'ride';
+        } else if(mode === 'car'){
+          // (dự phòng khi chưa nạp js/vehicles.js) đùi ngang, cẳng chân dựng đứng
           p.legL.rotation.set(-1.55, 0, -0.12); p.legR.rotation.set(-1.55, 0, 0.12);
           p.shinL.rotation.set(1.52, 0, 0);     p.shinR.rotation.set(1.52, 0, 0);
-          // Hai tay nắm vành vô-lăng đúng vị trí 10 giờ / 2 giờ (vành R=0.23 tâm y1.30 z0.70 trong js/vehicles.js).
-          // Đánh lái là vành quay: tay này nâng lên, tay kia hạ xuống y như thật.
-          p.armL.rotation.set(-0.56 - steer*0.26, 0, 0.58 - steer*0.10);
-          p.armR.rotation.set(-0.56 + steer*0.26, 0, -0.58 - steer*0.10);
-          p.foreL.rotation.set(-1.20 + steer*0.12, 0, 0.10);
-          p.foreR.rotation.set(-1.20 - steer*0.12, 0, -0.10);
-          p.body.rotation.set(0.10 + br, 0, -steer*0.04);
-          p.head.rotation.set(0.02, steer*0.10, -steer*0.02);
-        } else if(mode === 'plane'){
-          const pitch = Number(ud.vehiclePitch)||0;
-          // Hai tay đặt lên thanh ngang của cần lái (thanh này nằm đúng tầm tay trong js/vehicles.js):
-          // đẩy/kéo theo độ cao, tay lệch nhau khi bẻ lái.
-          // --- MÁY BAY: chân duỗi xuống bàn đạp bánh lái (gối hơi gập), hai tay nắm thanh ngang của cần lái ---
-          p.legL.rotation.set(-0.78, 0, -0.14); p.legR.rotation.set(-0.78, 0, 0.14);
-          p.shinL.rotation.set(0.78, 0, 0);     p.shinR.rotation.set(0.78, 0, 0);
-          // Thanh ngang ở y1.70 z0.80: mỗi tay nắm một bên. Kéo cần về phía mình (mũi ngẩng) thì tay lùi lại,
-          // khuỷu gập thêm; bẻ lái thì hai tay lệch nhau theo vành.
-          p.armL.rotation.set(-0.32 + steer*0.16 + pitch*0.30, 0, 0.36 - steer*0.06);
-          p.armR.rotation.set(-0.32 - steer*0.16 + pitch*0.30, 0, -0.36 - steer*0.06);
-          p.foreL.rotation.set(-1.45 - pitch*0.30, 0, 0.06);
-          p.foreR.rotation.set(-1.45 - pitch*0.30, 0, -0.06);
-          p.body.rotation.set(0.08 + br + pitch*0.16, 0, -steer*0.05);
-          p.head.rotation.set(0.01, steer*0.08, -pitch*0.05);
+          p.armL.rotation.set(-0.56, 0, 0.58);  p.armR.rotation.set(-0.56, 0, -0.58);
+          p.foreL.rotation.set(-1.20, 0, 0.10); p.foreR.rotation.set(-1.20, 0, -0.10);
+          p.body.rotation.set(0.10 + br, 0, 0);
         } else {
           p.legL.rotation.set(-1.52, 0, -0.12); p.legR.rotation.set(-1.52, 0, 0.12);
           p.shinL.rotation.set(1.46, 0, 0);     p.shinR.rotation.set(1.46, 0, 0);
@@ -879,68 +1127,34 @@ const GChar = (() => {
         p.foreL.rotation.x = -0.2; p.foreR.rotation.x = -0.2;
         group.position.y = Math.abs(Math.sin(t*8))*0.2;
       }
-      // ---------- CÂU CÁ: 7 pha — đi · chuẩn bị · ném · chờ · giật · dìu cá · bắt cá ----------
+      // ---------- CÂU CÁ: 7 pha — đi · chuẩn bị · ném · chờ · giật · dìu cá · bắt cá (IK, xem khối "CÂU CÁ" phía trên) ----------
       else if(a === 'rod' || a === 'fish' || a === 'bite' || a === 'reel' || a === 'cast'){
-        const wk = a === 'rod' ? mv : 0, ws = Math.sin(w)*0.7;      // 1 khi đang cầm cần đi bộ
-        // nền = pha CHỜ: cần hướng mặt nước ~25°, tay phải cầm cán (khuỷu gập 80-90°), tay trái đặt lên máy câu
-        let ax = -0.10, az = -0.35, fx = -0.30;                     // tay phải: vai · khuỷu
-        let lax = -0.40, laz = 0.66, lfx = 0.11;                    // tay trái
-        let lean = 0.08, headX = 0.12;                              // thân trước ~10° · đầu
-        let tF = -0.12, tB = 0.05;                                  // đùi chân trước / chân sau
-        let bend = 0.02;                                            // cần cong nhẹ theo sức nặng mồi
+        const ws = Math.sin(w)*0.7, P = fishPose(a, t, mv, ws, tt), sc = group.scale.y;
+        p.body.rotation.set(P[FI.lean]*D2R, P[FI.twist]*D2R, 0);
+        p.head.rotation.set(P[FI.headX]*D2R, -P[FI.twist]*D2R*0.7 + Math.sin(tt*0.5)*0.05, 0);          // thân xoay thì đầu giữ hướng nhìn mặt nước
         if(a === 'rod'){
-          // 1 · DI CHUYỂN: cần ~52°, chéo ra ngoài hông ~18° cho khỏi vướng, trọng tâm hạ 5%
-          ax = -0.45; az = -0.40; fx = -0.45;
-          lax = -0.70 - ws*0.30; lfx = -0.13;                       // tay trái thả lỏng, đung đưa theo nhịp bước
-          lean = 0.05; headX = 0.08;
-        } else if(a === 'cast'){
-          // 2 · CHUẨN BỊ → 3 · NÉM: dồn lực từ chân sau sang chân trước, cần vung qua đầu rồi dừng ở 45° phía mặt nước
-          const c = castPose(t);
-          ax = c[0]; fx = c[1]; az = c[2]; lean = c[3]; lax = c[4]; lfx = c[5]; tF = c[6]; tB = c[7];
-          bend = 0.03; headX = 0.10 + lean*0.3;
-        } else if(a === 'bite'){
-          // 5 · GIẬT CẦN: 0.12s gối khuỵu bật xuống + hai tay giật cần ngược ra sau, thân ngửa, mắt nhìn đầu cần
-          const k = t < 0.12 ? t/0.12 : Math.max(0, 1 - (t - 0.12)/0.55);
-          ax = -0.10 - 0.75*k + Math.sin(t*22)*0.02*k;
-          fx = -0.30 + 0.55*k;
-          lax = -0.40 - 0.66*k; laz = 0.63; lfx = 0.11 - 0.15*k;
-          lean = 0.08 - 0.30*k;
-          tF = -0.12 - 0.30*k; tB = 0.05 + 0.12*k;
-          bend = 0.06 + 0.12*k; headX = 0.12 - 0.22*k;
-        } else if(a === 'reel'){
-          // 6 · DÌU CÁ: gối nhún như giảm xóc theo từng cú ghì của cá, thân ngửa ra sau, cần uốn cong
-          // 7 · BẮT CÁ (đoạn cuối): khuỵu gối sâu, nâng cao cần, tay trái thò xuống đỡ cá
-          const rk = Math.max(0, 1 - t/T_REEL), pull = Math.sin(t*11)*(0.35 + 0.65*rk);
-          const land = Math.min(1, Math.max(0, (t - T_REEL*0.72)/(T_REEL*0.28)));
-          const pump = Math.max(0, Math.sin(t*6))*0.07*(1 - land);
-          ax = -0.55 - 0.62*land + pull*0.05; fx = -0.30 + pull*0.10 - 0.10*land;
-          lax = -0.94 - 0.28*land; lfx = 0.17 - 0.30*land;
-          lean = 0.10 + 0.16*(1 - land);
-          tF = -0.30 - 0.24*land - pump; tB = 0.16 + 0.06*land;
-          bend = 0.14 + 0.10*(1 - land) + 0.05*Math.abs(pull);
-          headX = 0.16 - 0.14*land;
-        }
-        // --- tay phải cầm cần (cổ tay hơi ngửa), tay trái đỡ cần / quay máy câu ---
-        p.armR.rotation.set(ax, 0, az);   p.foreR.rotation.set(fx, 0, 0.04);
-        p.armL.rotation.set(lax, 0, laz); p.foreL.rotation.set(lfx, 0, 0.03);
-        // --- thân hơi quay về phía cần, đầu dõi theo phao ---
-        p.body.rotation.set(lean, -0.10, 0);
-        p.head.rotation.set(headX, 0.10 + Math.sin(tt*0.5)*0.06, 0);
-        // --- chân: chân trước chân sau vững chãi, gối làm giảm xóc; cầm cần đi bộ thì giữ nhịp bước ---
-        if(a === 'rod'){
-          p.legL.rotation.set(-0.14 + ws, 0, -0.06); p.legR.rotation.set(-0.14 - ws, 0, 0.06);
-          p.shinL.rotation.set(0.24 + Math.max(0, -ws)*0.9, 0, 0);
-          p.shinR.rotation.set(0.24 + Math.max(0, ws)*0.9, 0, 0);
+          // đi bộ cầm cần: gối khuỵu nhẹ theo nhịp bước (FK), hạ hông tương ứng ~5% chiều cao để bàn chân vẫn chạm đất
+          const D = dimsOf(p), tL = -0.20 + ws, tR = -0.20 - ws, sL = 0.36 + Math.max(0, -ws)*0.9, sR = 0.36 + Math.max(0, ws)*0.9;
+          p.legL.rotation.set(tL, 0, -0.06); p.legR.rotation.set(tR, 0, 0.06);
+          p.shinL.rotation.set(sL, 0, 0);    p.shinR.rotation.set(sR, 0, 0);
+          const vL = D.thigh*Math.cos(tL) + D.shin*Math.cos(tL + sL), vR = D.thigh*Math.cos(tR) + D.shin*Math.cos(tR + sR);
+          group.position.y = -((D.thigh + D.shin) - Math.max(vL, vR))*sc + Math.abs(Math.sin(w*2))*0.02*mv;
         } else {
-          const sF = 0.24 - tF*0.85, sB = 0.20 + tB*0.9;
-          p.legL.rotation.set(tF, 0, -0.13); p.shinL.rotation.set(sF, 0, 0);   // chân trước (ngược tay cầm cần)
-          p.legR.rotation.set(tB, 0, 0.13);  p.shinR.rotation.set(sB, 0, 0);
-          // khuỵu gối thì hạ gốc nhân vật để bàn chân vẫn chạm đất
-          const dF = Math.cos(tF) + Math.cos(tF + sF), dB = Math.cos(tB) + Math.cos(tB + sB);
-          group.position.y = -0.58*(1.2 - 0.62*Math.max(dF, dB)) + Math.sin(tt*1.5)*0.004;
+          fishLegs(group, p, P, a === 'fish' ? Math.sin(tt*1.6)*0.012 : 0);                              // gối nhún theo nhịp thở khi chờ
+          group.position.y += P[FI.hop];
         }
-        ud.rodBend = bend;
+        p.grip.R = P[FI.gR]; p.grip.L = P[FI.gL];
+        ud.rodBend = P[FI.bend];
+        if(a === 'reel' && t < FISH_T.lift) ud._crank = ((ud._crank || 0) + dt*10) % (PI*2);              // tay trái quay máy ~1,6 vòng/giây
+        ik = 'fish';
       }
+    }
+    // IK tay: thân + chân đã đặt xong → (GLB) đồng bộ xương để biết vai thật đang ở đâu rồi mới chỉnh tay
+    if(ik){
+      if(p.glb) GLBChar.sync(group, p);
+      if(ik === 'sit') ikSit(group, p);
+      else if(ik === 'ride') ikRide(group, p, ud);
+      else if(ik === 'fish') ikFish(group, p, ud, FS, dt);
     }
     // trộn tư thế nền → tư thế động tác trong 0.16s đầu (xem khối "hành động" ở trên)
     if(ud.action && blend < 1){
